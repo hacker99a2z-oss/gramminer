@@ -129,6 +129,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       typeof message?.text === "string" &&
       /^\/start(?:@\w+)?(?:\s|$)/i.test(message.text);
 
+    console.log(`[telegram] webhook update received; start=${isStart}`);
     // Telegram supports executing a Bot API method directly from the webhook response.
     // This avoids a separate outbound connection from Render to api.telegram.org.
     if (isStart) {
