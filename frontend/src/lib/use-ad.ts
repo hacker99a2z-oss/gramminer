@@ -136,7 +136,10 @@ export function useRewardedAd() {
       if (failed) localStorage.removeItem(key);
       if (!s.resumed) {
         try {
-          const r = await showWithTimeout(controller, () => void started({ data: { initData, sessionId: s.sessionId } }).catch(() => undefined));
+          // Mark the reserved session as started on the backend before opening
+          // the SDK. The server callback rejects rewards for unstarted sessions.
+          await started({ data: { initData, sessionId: s.sessionId } });
+          const r = await showWithTimeout(controller, () => undefined);
           if (!r.done) throw new Error("Watch the ad till the end to get 100 coins");
         } catch (e) {
           const adError = e as { description?: string; state?: string; error?: boolean };
