@@ -1,7 +1,7 @@
 import http from "k6/http";
 import { check, sleep } from "k6";
 
-const baseUrl = (__ENV.BASE_URL || "").replace(/\\/+$/, "");
+const baseUrl = (__ENV.BASE_URL || "").replace(/\/+$/, "");
 if (!baseUrl) {
   throw new Error("Set BASE_URL to your staging Cloud Run URL.");
 }
