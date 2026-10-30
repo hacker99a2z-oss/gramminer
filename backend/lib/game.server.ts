@@ -27,8 +27,11 @@ function utcDate() {
 async function ensurePlayer(tg: TgUser) {
   // A single conditional UPSERT keeps returning-player loads lightweight:
   // unchanged profiles do not generate a database write.
-  const ref = /^ref_(\\d{1,20})$/.exec(tg.start_param ?? "")?.[1];
-  const parsedRefId = ref ? Number(ref) : null;
+  const refText = tg.start_param?.startsWith("ref_") ? tg.start_param.slice(4) : "";
+  const parsedRefId = refText.length > 0 && refText.length <= 20 &&
+      [...refText].every((char) => char >= "0" && char <= "9")
+    ? Number(refText)
+    : null;
   const refId = parsedRefId && Number.isSafeInteger(parsedRefId) && parsedRefId !== tg.id
     ? parsedRefId
     : null;
