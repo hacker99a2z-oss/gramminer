@@ -224,33 +224,31 @@ const server = createServer((req, res) => {
   });
 });
 
-let stopWebhookRetry = false;
+// The Telegram webhook is persistent on Telegram's side; re-registering it on
+// every Render restart is unnecessary and can spam ETIMEDOUT logs when outbound
+// access to api.telegram.org is temporarily unavailable. Enable this flag only
+// when intentionally changing the bot token, webhook URL, or secret.
+const autoConfigureTelegramWebhook =
+  process.env["TELEGRAM_AUTO_CONFIGURE_WEBHOOK"] === "true";
 
 initializeDatabase()
   .then(() => {
     server.listen(port, "0.0.0.0", () => {
       console.log("Gram Miner backend connected to Turso and listening on port " + port);
-      // Prefer IPv4 on hosts where IPv6 routes to Telegram may time out.
-      setDefaultResultOrder("ipv4first");
-      // Retry webhook registration after transient Telegram API/network failures.
-      void (async () => {
-        let attempt = 0;
-        while (!stopWebhookRetry) {
-          try {
-            await configureTelegramWebhook();
-            console.log("Telegram /start webhook configured");
-            return;
-          } catch (error) {
-            attempt += 1;
-            const delayMs = Math.min(300_000, 5_000 * 2 ** Math.min(attempt - 1, 6));
+      if (autoConfigureTelegramWebhook) {
+        // Prefer IPv4 on hosts where IPv6 routes to Telegram may time out.
+        setDefaultResultOrder("ipv4first");
+        void configureTelegramWebhook()
+          .then(() => console.log("Telegram /start webhook configured"))
+          .catch((error) => {
             console.error(
-              `Telegram webhook setup attempt ${attempt} failed; retrying in ${Math.round(delayMs / 1000)}s:`,
+              "[telegram] one-time webhook registration failed; the existing Telegram webhook is unchanged:",
               error,
             );
-            await new Promise((resolve) => setTimeout(resolve, delayMs));
-          }
-        }
-      })();
+          });
+      } else {
+        console.log("[telegram] keeping the existing webhook; startup registration skipped");
+      }
     });
   })
   .catch((error) => {
@@ -260,10 +258,8 @@ initializeDatabase()
   });
 
 process.once("SIGTERM", () => {
-  stopWebhookRetry = true;
   server.close(() => closeDatabase());
 });
 process.once("SIGINT", () => {
-  stopWebhookRetry = true;
   server.close(() => closeDatabase());
 });
