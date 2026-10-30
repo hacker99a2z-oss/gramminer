@@ -104,6 +104,10 @@ Generate two independent random values (one for AdsGram and one for payout cron)
 AdsGram callback URL:
 `https://gramminer-himu6.vercel.app/api/public/adsgram/reward?key=YOUR_ADSGRAM_REWARD_SECRET&userid=[userId]`
 
+The AdsGram URL is a Vercel server route that proxies the request to the Render backend. In the AdsGram **Rewarded ad block** settings, set its optional **Reward URL** to the URL above, replacing `YOUR_ADSGRAM_REWARD_SECRET` with the exact value stored in Render as `ADSGRAM_REWARD_SECRET`. Keep the literal `[userId]` placeholder unchanged. Do not put this secret in frontend code or a `VITE_*` variable.
+
+The ad itself must be displayed by the AdsGram browser SDK inside the Mini App. The SDK's local completion event is not allowed to credit coins. AdsGram's Reward URL callback is the server-to-server confirmation: only the backend callback handler updates Turso, and the frontend polls `/api/game/ad-status` until the backend reports the session as verified. Without a valid Reward URL callback, the user receives no coins.
+
 Payout callback URL:
 `https://gramminer-himu6.vercel.app/api/public/payout?key=YOUR_PAYOUT_CRON_SECRET`
 
