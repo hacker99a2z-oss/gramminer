@@ -167,7 +167,11 @@ export async function configureTelegramWebhook(): Promise<void> {
   });
 }
 
-async function sendWelcomeVideo(chatId: number): Promise<void> {
+async function sendWelcomeVideo(
+  chatId: number,
+  caption: string,
+  replyMarkup: { inline_keyboard: Array<Array<Record<string, unknown>>> },
+): Promise<void> {
   const encoded = await readFile(new URL("./assets/gramminer-welcome.mp4.b64", import.meta.url), "utf8");
   const video = Buffer.from(encoded.trim(), "base64");
   if (!video.length) throw new Error("Welcome video asset is empty");
@@ -175,6 +179,9 @@ async function sendWelcomeVideo(chatId: number): Promise<void> {
   const form = new FormData();
   form.set("chat_id", String(chatId));
   form.set("supports_streaming", "true");
+  form.set("caption", caption);
+  form.set("parse_mode", "HTML");
+  form.set("reply_markup", JSON.stringify(replyMarkup));
   form.set("video", new Blob([new Uint8Array(video)], { type: "video/mp4" }), "gramminer-welcome.mp4");
 
   const response = await fetch(`https://api.telegram.org/bot${getBotToken()}/sendVideo`, {
@@ -195,25 +202,19 @@ async function sendWelcomeVideo(chatId: number): Promise<void> {
 }
 
 export async function sendStartWelcome(chatId: number): Promise<void> {
-  try {
-    await sendWelcomeVideo(chatId);
-  } catch (error) {
-    console.error("[telegram] welcome video could not be sent", error);
-  }
-
   const appUrl = telegramHttpsUrl(process.env["BOT_APP_URL"]) ??
     "https://gramminer-nine.vercel.app";
   const officialChannel = telegramHttpsUrl(process.env["BOT_OFFICIAL_CHANNEL_URL"]);
   const supportGroup = telegramHttpsUrl(process.env["BOT_SUPPORT_GROUP_URL"]);
 
-  const text = [
+  const caption = [
     "🎮 <b>Welcome to Gram Miner!</b>",
     "⛏️ Start miners in the Mini App and claim rewards when each mining session is complete.",
     "🎁 Earn extra coins through rewarded ads, daily bonuses, and referrals.",
     "💎 Once your balance reaches the <b>$0.03 minimum</b>, request a withdrawal to your connected TON wallet.",
     "📊 Track every request in Withdrawal History, including pending and sent status.",
     "📢 Follow our Official Channel for updates and join the Supported Group for help and community discussions.",
-  ].join("\n\n");
+  ].join("\\n\\n");
 
   const inlineKeyboard: Array<Array<Record<string, unknown>>> = [
     [{ text: "🚀 Open App", web_app: { url: appUrl } }],
@@ -221,11 +222,18 @@ export async function sendStartWelcome(chatId: number): Promise<void> {
   if (officialChannel) inlineKeyboard.push([{ text: "📢 Official Channel", url: officialChannel }]);
   if (supportGroup) inlineKeyboard.push([{ text: "💬 Supported Group", url: supportGroup }]);
 
-  await botApi("sendMessage", {
-    chat_id: chatId,
-    text,
-    parse_mode: "HTML",
-    disable_web_page_preview: true,
-    reply_markup: { inline_keyboard: inlineKeyboard },
-  });
+  const replyMarkup = { inline_keyboard: inlineKeyboard };
+  try {
+    // Telegram sends the caption and inline keyboard as part of the same video message.
+    await sendWelcomeVideo(chatId, caption, replyMarkup);
+  } catch (error) {
+    console.error("[telegram] welcome video could not be sent; falling back to a text welcome", error);
+    await botApi("sendMessage", {
+      chat_id: chatId,
+      text: caption,
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+      reply_markup: replyMarkup,
+    });
+  }
 }
