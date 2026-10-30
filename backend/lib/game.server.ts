@@ -2,7 +2,7 @@ import { Address } from "@ton/core";
 import { getDb, withWriteTransaction, asRow, asNumber, asText } from "./db.server.ts";
 import { AD_COOLDOWN_MS, LEADERBOARD_SIZE, MIN_WITHDRAW_MILLI, WITHDRAW_HISTORY_LIMIT, minerById } from "./rules.ts";
 import { getBot, proofChannelUrl, verifyInitData, type TgUser } from "./tg.server.ts";
-import { getTonUsd } from "./payout.server.ts";
+import { getTonUsd, runPayouts } from "./payout.server.ts";
 
 const SESSION_TTL_MS = 5 * 60 * 1000;
 const SESSION_RE = /^[a-f0-9]{32}$/;
@@ -340,12 +340,18 @@ export async function withdraw(initData: string, milli: number, address: string)
     });
   });
 
-  // The scheduled payout processor picks up this durable pending withdrawal.
+  // Try to process immediately for the user; the scheduled processor is a fallback
+  // for pending withdrawals and in-flight batches when no user is online.
+  await runPayouts();
   return snapshot(tg.id);
 }
 
 export async function withdrawalStatus(initData: string) {
   const tg = await auth(initData);
+  const open = await getDb().execute(
+    "SELECT COUNT(*) AS count FROM withdrawals WHERE status IN ('pending', 'sending')",
+  );
+  if (asNumber(asRow(open.rows[0])["count"]) > 0) await runPayouts();
   return snapshot(tg.id);
 }
 
