@@ -33,7 +33,7 @@ jobs:
         run: docker build --tag gramminer-backend:ci .
 
   cloudflare-worker:
-    name: Build Cloudflare frontend
+    name: Build and validate Cloudflare Worker frontend
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -46,4 +46,6 @@ jobs:
       - name: Install frontend dependencies
         run: npm install --no-audit --no-fund
       - name: Build for Cloudflare Workers
-        run: npm run build:cloudflare
+        run: npm run build
+      - name: Validate Wrangler deployment bundle
+        run: npx wrangler deploy --dry-run
