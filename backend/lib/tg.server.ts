@@ -263,7 +263,7 @@ export async function sendStartWelcome(chatId: number): Promise<void> {
     "⛏️ <b>1. Mine</b> — Start miners and collect coins.",
     "🎁 <b>2. Earn</b> — Get bonus coins from ads and referrals.",
     "💎 <b>3. Withdraw</b> — Cash out to your TON wallet from $0.03.",
-  ].join("\\n\\n");
+  ].join("\n\n");
 
   const inlineKeyboard: Array<Array<Record<string, unknown>>> = [
     [{ text: "🚀 Open App", web_app: { url: appUrl } }],
