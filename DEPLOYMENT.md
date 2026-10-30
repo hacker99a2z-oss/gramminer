@@ -69,13 +69,19 @@ To publish one proof message after each payout batch is marked sent:
 1. Add the Telegram bot to your payment-proof channel as an administrator with permission to send messages.
 2. Set Render variable `PAYMENT_PROOF_CHAT_ID` to the channel username (for example, `@gramminer_payments`) or numeric channel ID.
 3. Set `PAYMENTS_PROOF_URL` to the channel's public link (for example, `https://t.me/gramminer_payments`) for the in-app proof link.
-4. Configure an external scheduler to call the production frontend URL below every minute. Keep the secret private.
+4. After merging the performance branch into `main`, open GitHub repository **Settings → Secrets and variables → Actions → New repository secret**.
+5. Add a repository secret named `PAYOUT_CRON_SECRET` and set it to the exact same value already configured as the Render service's `PAYOUT_CRON_SECRET`. Never commit or share this secret.
+6. Open **Actions → Gram Miner payout processor** and use **Run workflow** once to verify it.
 
-```text
-https://gramminer-nine.vercel.app/api/public/payout?key=YOUR_PAYOUT_CRON_SECRET
-```
+The GitHub Actions workflow in `.github/workflows/payout-processor.yml` calls the Render payout endpoint directly every 15 minutes using an Authorization bearer token. It processes pending withdrawals and checks in-flight batches; once a batch is marked sent, the backend posts the per-withdrawal proof to the configured channel. The Withdraw page refreshes open withdrawal statuses every 15 seconds while it remains open. A withdrawal is queued immediately, but TON transfer may wait until the next scheduled run (normally up to about 15 minutes, and longer if GitHub's scheduler or Render is delayed).
 
-The scheduler endpoint is authenticated by `PAYOUT_CRON_SECRET`. It processes pending payouts and checks in-flight batches; when a batch is marked sent, the backend posts a per-withdrawal proof to the configured channel. The Withdraw page refreshes open withdrawal statuses every 15 seconds while it remains open. The scheduled callback is what allows payout processing and channel posting to continue when no user has the Mini App open.
+Disable any older external payout scheduler after enabling this GitHub Actions workflow, so the same payout processor is not unnecessarily invoked twice. The payout lock still prevents concurrent duplicate runs.
+
+### Free-tier capacity notes
+
+- This repository's Render Blueprint keeps the backend on the Free plan, and the existing Turso database remains the source of truth. No paid Render service, Postgres database, Redis/Valkey instance, or worker is created by these changes.
+- The active Vercel frontend's server functions are configured for `sin1` (Singapore), close to the Render backend. Static assets continue to use Vercel's CDN.
+- Free plans can sleep, throttle, or impose request/database quotas. This setup is a low-cost starting point, not a capacity guarantee for 200,000–300,000 daily users or 50,000 simultaneous users. Load testing and a paid capacity plan would still be required before claiming that scale.
 
 ## Vercel frontend
 
