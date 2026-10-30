@@ -1,4 +1,3 @@
-
 import { createClient, type Client } from "@libsql/client";
 
 const SCHEMA_SQL = `
@@ -85,9 +84,9 @@ export function getDb(): Client {
 
   const url = process.env["TURSO_DATABASE_URL"];
   const authToken = process.env["TURSO_AUTH_TOKEN"];
-  if (!url) throw new Error("TURSO_DATABASE_URL is missing. Set it in Render Environment Variables.");
+  if (!url) throw new Error("TURSO_DATABASE_URL is missing. Configure it in the backend environment.");
   if (!url.startsWith("file:") && !authToken) {
-    throw new Error("TURSO_AUTH_TOKEN is missing. Set it in Render Environment Variables.");
+    throw new Error("TURSO_AUTH_TOKEN is missing. Configure it in the backend environment.");
   }
 
   client = createClient({ url, authToken });
