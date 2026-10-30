@@ -139,6 +139,12 @@ export function useRewardedAd() {
           const r = await showWithTimeout(controller, () => void started({ data: { initData, sessionId: s.sessionId } }).catch(() => undefined));
           if (!r.done) throw new Error("Watch the ad till the end to get 100 coins");
         } catch (e) {
+          const adError = e as { description?: string; state?: string; error?: boolean };
+          console.warn("[adsgram] Rewarded ad request failed", {
+            description: adError?.description ?? null,
+            state: adError?.state ?? null,
+            error: adError?.error ?? null,
+          }, e);
           localStorage.setItem(key, s.sessionId);
           try { await cancel({ data: { initData, sessionId: s.sessionId } }); localStorage.removeItem(key); } catch { /* retry next time */ }
           throw new Error(playbackError(e));
