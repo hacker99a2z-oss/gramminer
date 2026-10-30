@@ -207,12 +207,12 @@ export async function sendStartWelcome(chatId: number): Promise<void> {
   const supportGroup = telegramHttpsUrl(process.env["BOT_SUPPORT_GROUP_URL"]);
 
   const text = [
-    "🎮 <b>Gram Miner-এ স্বাগতম!</b>",
-    "⛏️ Mini App-এ miner চালু করে সময় শেষে reward claim করে তোমার balance বাড়াতে পারো।",
-    "🎁 Rewarded ad দেখে coins, daily bonus এবং referral reward সংগ্রহ করতে পারো।",
-    "💎 কমপক্ষে <b>$0.03</b> balance হলে connected TON wallet-এ withdrawal request দিতে পারো।",
-    "📊 History থেকে withdrawal-এর pending ও sent status দেখতে পারবে।",
-    "📢 আপডেট ও community help পেতে নিচের Official Channel এবং Supported Group-এ যুক্ত হও।",
+    "🎮 <b>Welcome to Gram Miner!</b>",
+    "⛏️ Start miners in the Mini App and claim rewards when each mining session is complete.",
+    "🎁 Earn extra coins through rewarded ads, daily bonuses, and referrals.",
+    "💎 Once your balance reaches the <b>$0.03 minimum</b>, request a withdrawal to your connected TON wallet.",
+    "📊 Track every request in Withdrawal History, including pending and sent status.",
+    "📢 Follow our Official Channel for updates and join the Supported Group for help and community discussions.",
   ].join("\n\n");
 
   const inlineKeyboard: Array<Array<Record<string, unknown>>> = [
