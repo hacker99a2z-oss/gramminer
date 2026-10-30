@@ -4,6 +4,7 @@ import { z } from "zod";
 import * as game from "./lib/game.server.ts";
 import { closeDatabase, getDb, initializeDatabase } from "./lib/db.server.ts";
 import { runPayouts } from "./lib/payout.server.ts";
+import { configureTelegramWebhook, sendStartWelcome, verifyTelegramWebhookSecret } from "./lib/tg.server.ts";
 
 const initData = z.string().min(1).max(4096);
 const withInit = z.object({ initData });
@@ -114,6 +115,21 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     return;
   }
 
+  if (req.method === "POST" && url.pathname === "/api/telegram/webhook") {
+    if (!verifyTelegramWebhookSecret(req.headers["x-telegram-bot-api-secret-token"])) {
+      text(res, 403, "Forbidden");
+      return;
+    }
+    const update = await readJson(req) as { message?: { text?: string; chat?: { id?: number } } };
+    const message = update.message;
+    const chatId = message?.chat?.id;
+    if (typeof chatId === "number" && Number.isSafeInteger(chatId) && typeof message?.text === "string" && /^\\/start(?:@\\w+)?(?:\\s|$)/i.test(message.text)) {
+      await sendStartWelcome(chatId);
+    }
+    json(res, 200, { ok: true });
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/health") {
     await getDb().execute("SELECT 1");
     json(res, 200, { ok: true, database: "turso" });
@@ -196,6 +212,9 @@ initializeDatabase()
   .then(() => {
     server.listen(port, "0.0.0.0", () => {
       console.log("Gram Miner backend connected to Turso and listening on port " + port);
+      void configureTelegramWebhook()
+        .then(() => console.log("Telegram /start webhook configured"))
+        .catch((error) => console.error("Telegram webhook setup failed:", error));
     });
   })
   .catch((error) => {
