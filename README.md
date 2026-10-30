@@ -1,26 +1,37 @@
 # Gram Miner
 
-Gram Miner is a Telegram Mini App built with TanStack Start, React, TypeScript, Supabase PostgreSQL, AdsGram, and TON Connect.
+Gram Miner is a Telegram Mini App built with React, TanStack Start, TypeScript, Supabase PostgreSQL, AdsGram, and TON Connect.
 
-## Development
+## Repository structure
+
+- `frontend/` — complete browser UI, pages/routes, React components, Telegram WebApp client helper, AdsGram client, TON Connect client, SSR and Vercel configuration.
+- `backend/` — standalone API server, game rules and database operations, Telegram Bot API integration, Supabase admin client, TON payouts, and database migrations.
+- Root `package.json` — backend runtime dependencies and Render start command.
+- Root `render.yaml` — Render service configuration.
+
+Lovable is not used for builds, runtime, API calls, error reporting, authentication, or Telegram integration. Telegram Bot API requests go directly to Telegram using `TELEGRAM_BOT_TOKEN`.
+
+## Local development
 
 Requires Node.js 22.18 or newer.
 
+Frontend:
 ```sh
+cd frontend
 npm install
 npm run dev
 ```
 
-Run the existing tests with `npm test` and create a production frontend build with `npm run build`.
+Backend, from repository root:
+```sh
+npm install
+npm run start:api
+```
 
 ## Deployment
 
-The repository is configured for a split deployment:
+- Vercel Root Directory: `frontend`
+- Render Root Directory: repository root
+- Supabase PostgreSQL remains the database. Existing tables and atomic `gm_*` functions are retained.
 
-- **Vercel:** TanStack Start frontend and SSR.
-- **Render:** standalone backend API (`backend/server.ts`).
-- **Supabase:** existing PostgreSQL database, RLS policies, and atomic `gm_*` SQL functions.
-
-Follow [DEPLOYMENT.md](./DEPLOYMENT.md) for the complete deployment steps and required environment variables. Never commit real `.env` files, Supabase service-role keys, Telegram connector keys, AdsGram secrets, payout cron secrets, or TON wallet mnemonics.
-
-The database is intentionally kept on Supabase. Migrating the current PostgreSQL schema and SECURITY DEFINER balance/payout functions to MongoDB would require a separate transactional rewrite and is not part of this deployment split.
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for environment-variable instructions. Never commit real `.env` files, Supabase service-role keys, Telegram bot tokens, AdsGram secrets, payout secrets, or TON wallet mnemonics.

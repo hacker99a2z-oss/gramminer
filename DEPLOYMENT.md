@@ -1,66 +1,95 @@
-# Gram Miner deployment
+# Gram Miner deployment and credentials
 
-## Architecture
+## Folder layout
 
-- **Vercel** serves the existing TanStack Start frontend and its SSR routes.
-- **Render** runs the standalone JSON API in the backend/server.ts file.
-- Vercel server functions proxy game requests to Render using the server-only BACKEND_URL variable. The browser does not receive this value.
-- Telegram initData verification, Supabase service-role access, game rules, SQL RPC calls, AdsGram verification, TON payout batching, and Telegram proof posting remain on Render.
-- **Supabase PostgreSQL stays as the database.** Its tables and SECURITY DEFINER gm_* SQL functions are required for the current atomic balance and withdrawal logic.
+- `frontend/`: UI, browser code, React components, pages, TanStack routes, SSR, Vercel config.
+- `backend/`: JSON API, game logic, database access, Telegram Bot API, TON payout logic, Supabase migration/schema.
+- Root: Render backend runtime package, Render Blueprint and shared ignore rules.
 
-## Deploy the backend to Render
+There is no Lovable plugin, SDK, gateway, analytics, auth broker, or build config in this deployment. Telegram is called directly with your own BotFather token.
 
-1. Create a Render Blueprint from this repository and select the deploy/vercel-render-split branch. Keep the repository root as the Root Directory.
-2. Render reads render.yaml, installs runtime dependencies, starts backend/server.ts, and checks /health.
-3. In the Render service environment, set the values listed below. Do not commit real values to GitHub.
+## Render backend
 
-Required:
-- SUPABASE_URL
-- SUPABASE_SERVICE_ROLE_KEY
-- LOVABLE_API_KEY and TELEGRAM_API_KEY (the existing Telegram connector gateway credentials)
-- ADSGRAM_REWARD_SECRET
-- PAYOUT_CRON_SECRET
-- TON_WALLET_MNEMONIC
-- FRONTEND_URL (your production Vercel URL)
+Keep Root Directory blank (repository root).
 
-Optional:
-- TONCENTER_API_KEY
-- TON_WALLET_VERSION (defaults to v5r1)
-- PAYMENT_PROOF_CHAT_ID
-- PAYMENTS_PROOF_URL
+- Build Command: `npm install --omit=dev`
+- Start Command: `npm run start:api`
+- Health Check Path: `/health`
 
-After deployment, verify that https://YOUR-RENDER-SERVICE.onrender.com/health returns {"ok":true}.
+Set the backend variables in Render > gramminer-backend > Environment.
 
-## Deploy the frontend to Vercel
+### Required backend variables
 
-1. Import this same Git repository into Vercel and select the deploy/vercel-render-split branch.
-2. Keep the Root Directory at the repository root and use the TanStack Start framework preset (also declared in vercel.json).
-3. Add BACKEND_URL=https://YOUR-RENDER-SERVICE.onrender.com to Vercel Environment Variables. Do not prefix it with VITE_.
-4. Deploy and confirm the home, donate, refer, and withdraw routes load.
+- `SUPABASE_URL`: Supabase project URL.
+- `SUPABASE_SERVICE_ROLE_KEY`: Supabase service-role key, or the newer `sb_secret_...` key. Backend-only.
+- `TELEGRAM_BOT_TOKEN`: your bot token from @BotFather. There is no LOVABLE_API_KEY or TELEGRAM_API_KEY.
+- `ADSGRAM_REWARD_SECRET`: randomly generated secret used to authenticate the AdsGram reward callback.
+- `PAYOUT_CRON_SECRET`: a different random secret used to authenticate the payout callback.
+- `TON_WALLET_MNEMONIC`: mnemonic for the dedicated TON payout wallet. Very sensitive.
+- `FRONTEND_URL`: `https://gramminer-nine.vercel.app`.
 
-## External integrations
+### Optional backend variables
 
-- Set the Telegram Mini App URL/domain to the Vercel production URL.
-- Set the AdsGram reward callback URL to https://YOUR-VERCEL-DOMAIN/api/public/adsgram/reward. The Vercel route forwards the callback to Render without exposing the reward secret.
-- Keep the existing payout cron URL at https://YOUR-VERCEL-DOMAIN/api/public/payout?key=YOUR_PAYOUT_CRON_SECRET, or call the matching path on Render directly.
-- The TonConnect manifest remains served from Vercel so its URL and icon origin match the Mini App.
+- `FRONTEND_URLS`: comma-separated additional trusted frontend domains.
+- `TONCENTER_API_KEY`: API key from @toncenter, optional for API limits.
+- `TON_WALLET_VERSION`: `v5r1` (default) or `v4`, matching the payout wallet contract.
+- `PAYMENT_PROOF_CHAT_ID`: channel username such as `@gramminer_payments` or a numeric chat ID.
+- `PAYMENTS_PROOF_URL`: optional public payment-proof link.
 
-## Secrets
+## Vercel frontend
 
-Only BACKEND_URL belongs in Vercel. All database, Telegram connector, AdsGram, payout, and wallet secrets belong in Render. SUPABASE_DB_URL is for local migration tooling only. The .env.example file contains names and placeholders, never real credentials.
+Set the Vercel project's Root Directory to `frontend`. The Vercel server-side environment variable is:
 
-## Database choice and free storage
+- `BACKEND_URL=https://gramminer-backend.onrender.com`
 
-Keep the existing Supabase PostgreSQL database. The current app relies on PostgreSQL tables, RLS, and atomic SQL functions; changing to MongoDB would require rewriting and retesting all balance, referral, reward, and withdrawal transactions.
+Do not prefix this with `VITE_`; it is only used by server functions and must not enter browser JavaScript.
 
-The current advertised free quotas are:
-- Supabase Free: 500 MB PostgreSQL database storage plus a separate 1 GB file-storage quota.
-- MongoDB Atlas Free: 0.5 GB data storage; MongoDB counts uncompressed documents and their indexes toward this cap.
+## Telegram bot setup
 
-These are different storage categories: Supabase's extra 1 GB is file/object storage, not extra PostgreSQL database space. Gram Miner's current game state is stored as relational database rows, and the app does not currently upload user files. So the database quotas are broadly similar for this use; changing to MongoDB does not provide a meaningful storage advantage and would require rewriting the atomic SQL logic.
+1. Open [@BotFather](https://t.me/BotFather) in Telegram.
+2. Send `/newbot` and follow its prompts, or use `/mybots` to choose the existing Gram Miner bot.
+3. Open the bot's API Token menu and copy the token.
+4. Add the token as Render's `TELEGRAM_BOT_TOKEN`. Do not paste it in chat, GitHub, Vercel, or any frontend variable.
+5. In BotFather configure the bot's Main Mini App or Menu Button URL to `https://gramminer-nine.vercel.app`.
+6. If posting payment proofs, add the bot to the proof channel as an administrator with permission to send messages.
 
-## Free-tier caveats
+The backend uses the official Telegram Bot API directly for `getMe` and `sendMessage`, and validates Telegram Mini App `initData` with the bot-token HMAC-SHA-256 algorithm.
 
-- Render says Free web services are not intended for production applications. They spin down after 15 minutes without inbound traffic and can take about a minute to start again. This can delay API requests, ad confirmations, and payout processing.
-- Supabase Free projects pause after one week of low activity.
-- Because this app handles TON withdrawals, use an always-on paid Render service for live money-handling production. Free hosting is suitable for initial testing only.
+## Supabase credentials
+
+1. Open your existing Supabase project (the one that contains the Gram Miner tables and `gm_*` SQL functions).
+2. Copy its Project URL from the Connect dialog or Project Settings > API.
+3. Copy its server-side Secret API key (`sb_secret_...`) or legacy service_role key from Settings > API Keys.
+4. Set them in Render as `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
+
+Do not use a publishable/anon key in the backend variable. Never expose a secret/service-role key in the frontend. Do not create a new database: keep the project that contains the existing game data.
+
+## Generate callback secrets
+
+Generate two independent random values (one for AdsGram and one for payout cron). For example run `openssl rand -hex 32` twice on your own computer. Do not reuse the same value for both variables.
+
+Set the AdsGram secret in Render as `ADSGRAM_REWARD_SECRET`, and configure the same value in the AdsGram callback URL. Set the second value as `PAYOUT_CRON_SECRET`, and configure the payout scheduler URL to use it.
+
+AdsGram callback URL:
+`https://gramminer-nine.vercel.app/api/public/adsgram/reward?key=YOUR_ADSGRAM_REWARD_SECRET&userid=USER_ID`
+
+Payout callback URL:
+`https://gramminer-nine.vercel.app/api/public/payout?key=YOUR_PAYOUT_CRON_SECRET`
+
+Check AdsGram's dashboard for its required user-ID macro name and replace `USER_ID` with that exact macro.
+
+## TON payout wallet
+
+Create a dedicated wallet for payouts; do not use your personal wallet's recovery phrase. Export its mnemonic securely and store it only in Render as `TON_WALLET_MNEMONIC`. Fund the derived wallet address with the amount needed for testing and network fees. Never send the mnemonic through chat or commit it to GitHub. Start on testnet or with tiny mainnet test amounts and confirm the derived address is the wallet you intended before enabling payouts.
+
+## Toncenter API key
+
+Optional: message [@toncenter](https://t.me/toncenter), open Manage API Keys, and create a key. Add it to Render as `TONCENTER_API_KEY`. The app can call the public API without this key but may be rate limited.
+
+## Local-only variables
+
+`SUPABASE_DB_URL` is only needed if you later run database migrations from a trusted local computer. It is not required by the production app at runtime.
+
+## Security notes
+
+Never commit real `.env` files, bot tokens, Supabase secret keys, callback secrets, or wallet recovery phrases. Keep all secrets in Render, except `BACKEND_URL` which belongs in Vercel server-side Environment Variables.

@@ -1,23 +1,16 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import type { Snapshot, LoadResult, Leaderboard, Referrals, ReferralClaim, AdStatus } from "./game.types";
 
 const init = z.string().min(1).max(4096);
 const withInit = z.object({ initData: init });
 const minerInput = z.object({ initData: init, minerId: z.number().int().min(1).max(5) });
 const sessionInput = z.object({ initData: init, sessionId: z.string().regex(/^[a-f0-9]{32}$/) });
 
-type GameService = typeof import("./game.server");
-type Snapshot = Awaited<ReturnType<GameService["snapshot"]>>;
-type LoadResult = Awaited<ReturnType<GameService["load"]>>;
-type Leaderboard = Awaited<ReturnType<GameService["leaderboard"]>>;
-type Referrals = Awaited<ReturnType<GameService["referrals"]>>;
-type ReferralClaim = Awaited<ReturnType<GameService["claimReferral"]>>;
-type AdStatus = Awaited<ReturnType<GameService["adStatus"]>>;
-
 async function callBackend<T>(path: string, data?: unknown): Promise<T> {
   const backendUrl = process.env["BACKEND_URL"]?.replace(/\/+$/, "");
   if (!backendUrl) {
-    throw new Error("Backend is not configured. Set BACKEND_URL in the Vercel project environment variables.");
+    throw new Error("Backend is not configured. Set BACKEND_URL in Vercel Environment Variables.");
   }
 
   let response: Response;

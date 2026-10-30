@@ -11,13 +11,13 @@ services:
         value: 22.18.0
       - key: FRONTEND_URL
         sync: false
+      - key: FRONTEND_URLS
+        sync: false
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
-      - key: LOVABLE_API_KEY
-        sync: false
-      - key: TELEGRAM_API_KEY
+      - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: ADSGRAM_REWARD_SECRET
         sync: false

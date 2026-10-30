@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { loadGame } from "./game.functions";
 import { tgApp } from "./telegram";
-import type { Snapshot } from "./game.server";
+import type { Snapshot } from "./game.types";
 
 type GameUser = { id: number | null; name: string; username?: string | undefined; photoUrl?: string | undefined };
 type Ctx = {
