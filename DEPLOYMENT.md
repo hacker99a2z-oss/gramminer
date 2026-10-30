@@ -92,6 +92,8 @@ Do not prefix this with `VITE_`; it must not enter browser JavaScript. No databa
 3. Copy its API token and add it to Render as `TELEGRAM_BOT_TOKEN`. Never paste it in chat or commit it to GitHub.
 4. Configure the bot's Main Mini App or Menu Button URL to `https://gramminer-himu6.vercel.app`.
 5. If posting payment proofs, add the bot to the proof channel as an administrator with permission to send messages.
+6. Set Render variables: `PUBLIC_BACKEND_URL=https://gramminer-backend.onrender.com`, `BOT_APP_URL=https://gramminer-nine.vercel.app`, `BOT_OFFICIAL_CHANNEL_URL=https://t.me/your_channel`, and `BOT_SUPPORT_GROUP_URL=https://t.me/your_group`.
+7. The backend registers its Telegram webhook on startup. A `/start` command sends the bundled welcome video followed by a six-sentence Bengali introduction and the Open App, Official Channel and Supported Group buttons. Configure the two Telegram links for those last two buttons to appear.
 
 The backend uses the official Telegram Bot API and validates Telegram Mini App `initData` with bot-token HMAC-SHA-256.
 
