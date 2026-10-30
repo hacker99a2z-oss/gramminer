@@ -15,6 +15,7 @@ jobs:
     timeout-minutes: 6
     env:
       PAYOUT_CRON_SECRET: ${{ secrets.PAYOUT_CRON_SECRET }}
+      PAYOUT_BACKEND_URL: ${{ vars.PAYOUT_BACKEND_URL || 'https://gramminer-backend.onrender.com' }}
     steps:
       - name: Skip until the repository secret is configured
         if: ${{ env.PAYOUT_CRON_SECRET == '' }}
@@ -25,4 +26,4 @@ jobs:
         run: |
           curl --fail --silent --show-error --max-time 240 \
             --header "Authorization: Bearer ${PAYOUT_CRON_SECRET}" \
-            https://gramminer-backend.onrender.com/api/public/payout
+            "${PAYOUT_BACKEND_URL%/}/api/public/payout"
