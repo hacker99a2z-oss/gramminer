@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Crown, HandHeart, Heart } from "lucide-react";
@@ -10,26 +9,14 @@ import { errMsg, useGame } from "@/lib/game";
 import { DONATE_COINS, LEADERBOARD_SIZE } from "@/lib/rules";
 import { haptic } from "@/lib/telegram";
 
-export const Route = createFileRoute("/donate")({
-  head: () => ({
-    meta: [
-      { title: "Donate to the poor — Gram Miner" },
-      { name: "description", content: "Give coins to support people in need and climb the Gram Miner top donors board." },
-      { property: "og:title", content: "Donate to the poor — Gram Miner" },
-      { property: "og:description", content: "Give 100 coins to support the poor and join the top 20 donors." },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
-    ],
-  }),
-  component: Donate,
-});
+export const Route = createFileRoute("/donate")({ component: Donate });
 
 const medal = ["bg-gold-gradient text-primary-foreground", "bg-muted-foreground/80 text-background", "bg-gold-deep text-primary-foreground"];
 
 function Donate() {
   const game = useGame();
-  const give = useServerFn(donate);
-  const board = useServerFn(getLeaderboard);
+  const give = (donate);
+  const board = (getLeaderboard);
   const qc = useQueryClient();
   const { data } = useQuery({ queryKey: ["leaderboard"], queryFn: () => board() });
   const [busy, setBusy] = useState(false);
