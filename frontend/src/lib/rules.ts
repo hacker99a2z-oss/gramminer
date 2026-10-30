@@ -20,7 +20,7 @@ export const REFERRAL_REQUIRED_MINER = 2;
 export const MIN_WITHDRAW_MILLI = 100;
 export const LEADERBOARD_SIZE = 20;
 export const WITHDRAW_HISTORY_LIMIT = 20;
-export const ADSGRAM_BLOCK_ID = "41655";
+export const ADSGRAM_BLOCK_ID = "56792";
 
 export const minerById = (id: number) => MINERS.find((m) => m.id === id);
 
