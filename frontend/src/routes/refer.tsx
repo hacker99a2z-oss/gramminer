@@ -38,7 +38,7 @@ function Refer() {
     enabled: !!game.initData,
   });
 
-  const link = `https://t.me/${game.botUsername ?? "FarmerCityBot"}?startapp=ref_${game.user.id ?? "guest"}`;
+  const link = `https://t.me/playersfordestiny_bot?startapp=ref_${game.user.id ?? "guest"}`;
   const share = () => {
     const url = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent("⛏ Join me on Gram Miner — mine coins and earn!")}`;
     const app = tgApp();
