@@ -65,6 +65,11 @@ CREATE TABLE IF NOT EXISTS locks (
   id TEXT PRIMARY KEY,
   until TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS telegram_file_cache (
+  asset_key TEXT PRIMARY KEY,
+  file_id TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 `;
 
 let client: Client | undefined;
