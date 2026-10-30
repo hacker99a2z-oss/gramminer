@@ -24,6 +24,8 @@ export const Route = createFileRoute("/withdraw")({
   component: Withdraw,
 });
 
+const statusLabel: Record<string, string> = { sending: "pending" };
+
 const statusStyle: Record<string, string> = {
   sent: "bg-success/15 text-success",
   pending: "bg-accent text-accent-foreground",
@@ -120,7 +122,7 @@ function Withdraw() {
                 <p className="font-display text-sm font-bold">{usd(w.milli)} <span className="text-xs font-normal text-muted-foreground">· {w.ton.toFixed(4)} TON</span></p>
                 <p className="text-xs text-muted-foreground">Tonkeeper · {shortAddr(w.address)} · {new Date(w.createdAt).toLocaleDateString()}</p>
               </div>
-              <span className={`rounded-full px-2 py-0.5 text-xs font-bold capitalize ${statusStyle[w.status] ?? "bg-secondary"}`}>{w.status}</span>
+              <span className={`rounded-full px-2 py-0.5 text-xs font-bold capitalize ${statusStyle[w.status] ?? "bg-secondary"}`}>{statusLabel[w.status] ?? w.status}</span>
             </div>
           ))}
         </div>
