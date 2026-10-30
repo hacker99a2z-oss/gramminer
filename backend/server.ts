@@ -101,7 +101,7 @@ function applyCors(req: IncomingMessage, res: ServerResponse, path: string) {
     res.setHeader("access-control-allow-origin", origin);
     res.setHeader("vary", "Origin");
   }
-  res.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
+  res.setHeader("access-control-allow-methods", "GET, HEAD, POST, OPTIONS");
   res.setHeader("access-control-allow-headers", "Content-Type");
 }
 
@@ -123,16 +123,31 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     const update = await readJson(req) as { message?: { text?: string; chat?: { id?: number } } };
     const message = update.message;
     const chatId = message?.chat?.id;
-    if (typeof chatId === "number" && Number.isSafeInteger(chatId) && typeof message?.text === "string" && /^\/start(?:@\w+)?(?:\s|$)/i.test(message.text)) {
-      await sendStartWelcome(chatId);
-    }
+    const isStart = typeof chatId === "number" &&
+      Number.isSafeInteger(chatId) &&
+      typeof message?.text === "string" &&
+      /^\/start(?:@\w+)?(?:\s|$)/i.test(message.text);
+
+    // Acknowledge Telegram immediately. Send the welcome post in the background
+    // so a large first-time video upload cannot make Telegram retry the update.
     json(res, 200, { ok: true });
+    if (isStart) {
+      void sendStartWelcome(chatId).catch((error) => {
+        console.error("[telegram] failed to send /start welcome", error);
+      });
+    }
     return;
   }
 
-  if (req.method === "GET" && url.pathname === "/health") {
-    await getDb().execute("SELECT 1");
-    json(res, 200, { ok: true, database: "turso" });
+  // Lightweight uptime endpoint. It avoids touching the database or running payout
+  // work, and supports both GET and HEAD methods used by monitoring services.
+  if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/health") {
+    if (req.method === "HEAD") {
+      res.writeHead(200, { "cache-control": "no-store" });
+      res.end();
+    } else {
+      json(res, 200, { ok: true });
+    }
     return;
   }
 
@@ -170,7 +185,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     return;
   }
 
-  if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/public/payout") {
+  if (req.method === "GET" && url.pathname === "/api/public/payout") {
     const secret = process.env["PAYOUT_CRON_SECRET"];
     const key = url.searchParams.get("key") ?? "";
     const supplied = Buffer.from(key);
