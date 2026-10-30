@@ -9,6 +9,7 @@ export default defineConfig({
     tanstackRouter({
       target: "react",
       autoCodeSplitting: true,
+      routeFileIgnorePattern: "api|tonconnect-manifest",
     }),
     tailwindcss(),
     tsconfigPaths(),
