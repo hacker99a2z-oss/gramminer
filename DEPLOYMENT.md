@@ -102,11 +102,11 @@ The backend uses the official Telegram Bot API and validates Telegram Mini App `
 Generate two independent random values (one for AdsGram and one for payout cron). For example, run `openssl rand -hex 32` twice on your own computer. Do not reuse a value.
 
 AdsGram callback URL:
-`https://gramminer-himu6.vercel.app/api/public/adsgram/reward?key=YOUR_ADSGRAM_REWARD_SECRET&userid=[userId]`
+`https://play-for-win-bice.vercel.app/api/public/adsgram/reward?key=YOUR_ADSGRAM_REWARD_SECRET&userid=[userId]`
 
 The AdsGram URL is a Vercel server route that proxies the request to the Render backend. In the AdsGram **Rewarded ad block** settings, set its optional **Reward URL** to the URL above, replacing `YOUR_ADSGRAM_REWARD_SECRET` with the exact value stored in Render as `ADSGRAM_REWARD_SECRET`. Keep the literal `[userId]` placeholder unchanged. Do not put this secret in frontend code or a `VITE_*` variable.
 
-The ad itself must be displayed by the AdsGram browser SDK inside the Mini App. The SDK's local completion event is not allowed to credit coins. AdsGram's Reward URL callback is the server-to-server confirmation: only the backend callback handler updates Turso, and the frontend polls `/api/game/ad-status` until the backend reports the session as verified. Without a valid Reward URL callback, the user receives no coins.
+The ad itself is displayed by the AdsGram browser SDK inside the Mini App. The backend creates and marks a single-use ad session as started before the SDK is opened. The SDK's local completion event never credits coins. AdsGram documents the Reward URL as an additional GET callback after the user receives the rewarded completion on the client; it carries the Telegram `userId`. The Render backend checks the shared callback secret, user session, session phase, expiry, cooldown and duplicate status before crediting Turso. The frontend only polls `/api/game/ad-status` until the backend reports that callback as verified. Without a valid Reward URL callback, the user receives no coins. Note that AdsGram's documented callback carries a user ID, not a signed per-view event ID, so the callback is protected by the private URL secret and the backend's one-active-session/idempotency checks; it is not an independently signed proof payload.
 
 Payout callback URL:
 `https://gramminer-himu6.vercel.app/api/public/payout?key=YOUR_PAYOUT_CRON_SECRET`
