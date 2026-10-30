@@ -1,9 +1,9 @@
 // Rewarded AdsGram ad with server-side verification + shared 3-minute cooldown (ported from the original app).
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { adStatus, cancelAd, markAdStarted, startAd } from "./game.functions";
 import { ADSGRAM_BLOCK_ID } from "./rules";
-import { useGame } from "./game";
+import { useGame, useGameClock } from "./game";
 
 type ShowResult = { done: boolean; description: string; state: string; error: boolean };
 type AdController = {
@@ -41,22 +41,15 @@ export function useRewardedAd() {
   const cancel = useServerFn(cancelAd);
   const status = useServerFn(adStatus);
   const [loading, setLoading] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
+  const now = useGameClock();
   const ctrl = useRef<AdController | undefined>(undefined);
-  const offset = useMemo(() => (game.state?.serverNow ? game.state.serverNow - Date.now() : 0), [game.state?.serverNow]);
   const nextAdAt = game.state?.nextAdAt ?? null;
-  const left = nextAdAt ? Math.max(0, nextAdAt - (now + offset)) : 0;
+  const left = nextAdAt ? Math.max(0, nextAdAt - now) : 0;
 
   useEffect(() => {
     const sdk = (window as unknown as { Adsgram?: { init: (o: { blockId: string; debug?: boolean }) => AdController } }).Adsgram;
     if (sdk) ctrl.current = sdk.init({ blockId: ADSGRAM_BLOCK_ID, debug: false });
   }, []);
-
-  useEffect(() => {
-    if (!left) return undefined;
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [left]);
 
   const secs = Math.ceil(left / 1000);
   const timer = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
@@ -86,7 +79,6 @@ export function useRewardedAd() {
         const st = await status({ data: { initData, sessionId: s.sessionId } });
         if (st.verified && st.state) {
           game.setState(st.state);
-          setNow(Date.now());
           return;
         }
         if (st.expired) throw new Error("Ad verification expired. Please try again.");

@@ -17,6 +17,28 @@ type Ctx = {
 };
 
 const GameCtx = createContext<Ctx | null>(null);
+const GameClockCtx = createContext<number | null>(null);
+
+function GameClockProvider({ children }: { children: ReactNode }) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const syncClock = () => setNow(Date.now());
+    const interval = window.setInterval(syncClock, 1000);
+    document.addEventListener("visibilitychange", syncClock);
+    window.addEventListener("focus", syncClock);
+    window.addEventListener("pageshow", syncClock);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", syncClock);
+      window.removeEventListener("focus", syncClock);
+      window.removeEventListener("pageshow", syncClock);
+    };
+  }, []);
+
+  return <GameClockCtx.Provider value={now}>{children}</GameClockCtx.Provider>;
+}
 
 export function GameProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
@@ -94,9 +116,15 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   return (
     <GameCtx.Provider value={{ ready, initData, user, state, setState, error, botUsername, proofUrl, refresh }}>
-      {children}
+      <GameClockProvider>{children}</GameClockProvider>
     </GameCtx.Provider>
   );
+}
+
+export function useGameClock() {
+  const now = useContext(GameClockCtx);
+  if (now === null) throw new Error("useGameClock outside GameProvider");
+  return now;
 }
 
 export function useGame() {
