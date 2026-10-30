@@ -373,7 +373,10 @@ export async function adSessionUpdate(initData: string, sessionId: string, actio
   const patch = action === "started"
     ? "UPDATE ad_sessions SET phase = 'playing' WHERE tg_id = ? AND session_id = ? AND status = 'pending'"
     : "UPDATE ad_sessions SET status = 'cancelled' WHERE tg_id = ? AND session_id = ? AND status = 'pending'";
-  await getDb().execute({ sql: patch, args: [tg.id, sessionId] });
+  const result = await getDb().execute({ sql: patch, args: [tg.id, sessionId] });
+  if (action === "started") {
+    requireChanged(result.rowsAffected, "Ad session is no longer active. Tap Watch Ad again.");
+  }
   return { ok: true };
 }
 
@@ -402,6 +405,10 @@ export async function rewardAd(tgId: number): Promise<string> {
     if (asText(session["status"]) !== "pending" || new Date(asText(session["expires_at"])).getTime() <= Date.now()) {
       return "expired";
     }
+    // AdsGram's Reward URL is the only path that grants coins. Also require
+    // this authenticated player's reserved session to have been marked as
+    // started before the client was allowed to display the rewarded ad.
+    if (asText(session["phase"]) !== "playing") return "not_started";
 
     const playerResult = await tx.execute({ sql: "SELECT last_ad_at, last_ad_session_id FROM players WHERE tg_id = ?", args: [tgId] });
     if (!playerResult.rows.length) return "no_session";
