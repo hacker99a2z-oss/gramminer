@@ -144,3 +144,4 @@ For the current game, the browser is never the source of truth for coins or with
 ## 7. Existing production and rollback
 
 The existing Render backend, Vercel frontend and Turso database are not deleted by this migration branch. Keep the existing provider environment variables and deployments until the Cloud Run/Pages stack is verified. Do not change the Turso URL or copy/migrate the production database; the Cloud Run backend must connect to the same existing Turso database.
+Cloudflare Pages preview trigger test
