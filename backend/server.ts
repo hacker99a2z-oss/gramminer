@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { setDefaultResultOrder } from "node:dns";
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import * as game from "./lib/game.server.ts";
@@ -223,13 +224,33 @@ const server = createServer((req, res) => {
   });
 });
 
+let stopWebhookRetry = false;
+
 initializeDatabase()
   .then(() => {
     server.listen(port, "0.0.0.0", () => {
       console.log("Gram Miner backend connected to Turso and listening on port " + port);
-      void configureTelegramWebhook()
-        .then(() => console.log("Telegram /start webhook configured"))
-        .catch((error) => console.error("Telegram webhook setup failed:", error));
+      // Prefer IPv4 on hosts where IPv6 routes to Telegram may time out.
+      setDefaultResultOrder("ipv4first");
+      // Retry webhook registration after transient Telegram API/network failures.
+      void (async () => {
+        let attempt = 0;
+        while (!stopWebhookRetry) {
+          try {
+            await configureTelegramWebhook();
+            console.log("Telegram /start webhook configured");
+            return;
+          } catch (error) {
+            attempt += 1;
+            const delayMs = Math.min(300_000, 5_000 * 2 ** Math.min(attempt - 1, 6));
+            console.error(
+              `Telegram webhook setup attempt ${attempt} failed; retrying in ${Math.round(delayMs / 1000)}s:`,
+              error,
+            );
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+          }
+        }
+      })();
     });
   })
   .catch((error) => {
@@ -239,8 +260,10 @@ initializeDatabase()
   });
 
 process.once("SIGTERM", () => {
+  stopWebhookRetry = true;
   server.close(() => closeDatabase());
 });
 process.once("SIGINT", () => {
+  stopWebhookRetry = true;
   server.close(() => closeDatabase());
 });
