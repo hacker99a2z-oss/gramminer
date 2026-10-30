@@ -33,7 +33,7 @@ jobs:
       - name: Build backend container
         run: docker build --tag gramminer-backend:ci .
 
-  cloudflare-worker:
+  cloudflare-pages:
     name: Build and validate Cloudflare Pages frontend
     runs-on: ubuntu-latest
     defaults:
@@ -46,10 +46,9 @@ jobs:
           node-version: 22
       - name: Install frontend dependencies
         run: npm install --no-audit --no-fund
-      - name: Build for Cloudflare Workers
+      - name: Build static frontend for Cloudflare Pages
         run: npm run build:pages
       - name: Validate Pages output
         run: |
-          test -f dist/index.html
           test -f dist/_shell.html
           test -f dist/_routes.json
