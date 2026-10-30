@@ -308,6 +308,11 @@ export async function withdraw(initData: string, milli: number, address: string)
   return snapshot(tg.id);
 }
 
+export async function withdrawalStatus(initData: string) {
+  const tg = await auth(initData);
+  return snapshot(tg.id);
+}
+
 // ---------- AdsGram rewarded ad sessions (server-verified) ----------
 export async function startAd(initData: string, abandonSessionId?: string) {
   const tg = await auth(initData);
