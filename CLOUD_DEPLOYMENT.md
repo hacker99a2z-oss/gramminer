@@ -63,7 +63,7 @@ Use Google Cloud project region **asia-southeast1 (Singapore)** for the API.
 
 ## 2. Deploy the TanStack Start frontend to Cloudflare Workers
 
-Cloudflare's official TanStack Start integration uses `@cloudflare/vite-plugin` and Wrangler. This is a Workers SSR deployment, **not** a Pages static-site deployment. Static asset requests are separately unlimited on the Workers platform, but SSR and server-function requests count as Worker requests.
+Cloudflare's official TanStack Start integration uses `@cloudflare/vite-plugin` and Wrangler. This is a Workers SSR deployment, **not** a Pages static-site deployment. The separate `vite.cloudflare.config.ts` preserves the existing Vercel/Nitro `vite.config.ts`, so merging this preparation does not intentionally switch Vercel's current build path. Static asset requests are separately unlimited on the Workers platform, but SSR and server-function requests count as Worker requests.
 
 1. In the Cloudflare dashboard, enable Workers and create/login to your account.
 2. From the repository's `frontend/` folder:
@@ -71,7 +71,7 @@ Cloudflare's official TanStack Start integration uses `@cloudflare/vite-plugin` 
    ```sh
    npm install
    npx wrangler login
-   npm run build
+   npm run build:cloudflare
    npx wrangler deploy
    ```
 
