@@ -166,3 +166,15 @@ Cloudflare Pages preview trigger test
 - Cloud Run startup checks database connectivity with `SELECT 1`; schema DDL is run explicitly with `npm run db:migrate` as a one-off release step.
 - The payout database lease is 10 minutes, longer than the configured payout request timeout, to reduce the risk of overlapping payout workers.
 - These changes reduce avoidable work but do not prove any particular DAU capacity. Run staged load tests and monitor Turso, TON provider, Cloud Run and queue backlog before raising instance limits.
+
+## 9. Safe read-only load test (staging only)
+
+The repository includes a k6 script for a controlled, read-only leaderboard load test. It does not create users, change balances, submit withdrawals, or send TON. Run it only against a staging Cloud Run service connected to a staging/test database — never against the live production service.
+
+Install k6, then run:
+
+```sh
+k6 run -e BASE_URL=https://YOUR_STAGING_CLOUD_RUN_URL -e CONFIRM_STAGING=yes loadtest/leaderboard.js
+```
+
+The default ramp is intentionally modest (10, 25, then 50 virtual users). Check the p95 latency, error rate, Cloud Run instance count/CPU/memory, and Turso read usage. Increase the stages gradually only after reviewing the metrics and setting a spend limit. This leaderboard-only test is a starting smoke/load test, not proof that all game actions or 200,000–300,000 DAU are supported. Mutating API tests require isolated test Telegram identities and a dedicated staging database.
