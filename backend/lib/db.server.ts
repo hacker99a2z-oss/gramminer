@@ -103,6 +103,10 @@ export async function initializeDatabase(): Promise<void> {
   initialization = (async () => {
     const db = getDb();
     await db.executeMultiple(SCHEMA_SQL);
+    const withdrawalColumns = await db.execute("PRAGMA table_info(withdrawals)");
+    if (!withdrawalColumns.rows.some((row) => String((row as { name?: unknown }).name) === "proof_message_url")) {
+      await db.execute("ALTER TABLE withdrawals ADD COLUMN proof_message_url TEXT");
+    }
     await db.execute({
       sql: "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
       args: [1, new Date().toISOString()],
