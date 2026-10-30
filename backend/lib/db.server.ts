@@ -1,3 +1,4 @@
+
 import { createClient, type Client } from "@libsql/client";
 
 const SCHEMA_SQL = `
@@ -86,6 +87,13 @@ export function getDb(): Client {
 
   client = createClient({ url, authToken });
   return client;
+}
+
+export function closeDatabase(): void {
+  client?.close();
+  client = undefined;
+  initialized = false;
+  initialization = undefined;
 }
 
 export async function initializeDatabase(): Promise<void> {

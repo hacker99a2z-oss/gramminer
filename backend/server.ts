@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import * as game from "./lib/game.server.ts";
-import { initializeDatabase } from "./lib/db.server.ts";
+import { closeDatabase, getDb, initializeDatabase } from "./lib/db.server.ts";
 import { runPayouts } from "./lib/payout.server.ts";
 
 const initData = z.string().min(1).max(4096);
@@ -114,6 +114,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   }
 
   if (req.method === "GET" && url.pathname === "/health") {
+    await getDb().execute("SELECT 1");
     json(res, 200, { ok: true, database: "turso" });
     return;
   }
@@ -154,8 +155,10 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
 
   if (req.method === "GET" && url.pathname === "/api/public/payout") {
     const secret = process.env["PAYOUT_CRON_SECRET"];
-    const key = url.searchParams.get("key");
-    if (!secret || key !== secret) {
+    const key = url.searchParams.get("key") ?? "";
+    const supplied = Buffer.from(key);
+    const configured = Buffer.from(secret ?? "");
+    if (!secret || supplied.length !== configured.length || !timingSafeEqual(supplied, configured)) {
       text(res, 403, "Forbidden");
       return;
     }
@@ -196,5 +199,13 @@ initializeDatabase()
   })
   .catch((error) => {
     console.error("Turso database initialization failed; refusing to start:", error);
+    closeDatabase();
     process.exitCode = 1;
   });
+
+process.once("SIGTERM", () => {
+  server.close(() => closeDatabase());
+});
+process.once("SIGINT", () => {
+  server.close(() => closeDatabase());
+});

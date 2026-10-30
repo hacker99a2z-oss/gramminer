@@ -70,12 +70,21 @@ async function insertRows(table, rows) {
   }
 }
 
+async function countRows(client, table) {
+  const result = await client.execute("SELECT COUNT(*) AS count FROM " + table);
+  return BigInt(String(result.rows[0].count));
+}
+
 try {
   await destination.executeMultiple(schema);
   let total = 0;
+
   for (const table of tables) {
+    const sourceCountResult = await source.query("SELECT COUNT(*)::text AS count FROM " + table.name);
+    const expectedCount = BigInt(sourceCountResult.rows[0].count);
     let offset = 0;
-    let copied = 0;
+    let readCount = 0;
+
     while (true) {
       const result = await source.query(
         "SELECT * FROM " + table.name + " ORDER BY " + table.order + " LIMIT 500 OFFSET $1",
@@ -83,14 +92,45 @@ try {
       );
       if (!result.rows.length) break;
       await insertRows(table, result.rows);
-      copied += result.rows.length;
+      readCount += result.rows.length;
       offset += result.rows.length;
     }
-    total += copied;
-    process.stdout.write(table.name + ": read " + copied + " rows\n");
+
+    const actualCount = await countRows(destination, table.name);
+    if (readCount !== expectedCount || actualCount !== expectedCount) {
+      throw new Error(
+        table.name + " verification failed: source=" + expectedCount +
+        ", read=" + readCount + ", destination=" + actualCount +
+        ". Keep Supabase active and investigate before cutover.",
+      );
+    }
+
+    total += readCount;
+    process.stdout.write(table.name + ": verified " + actualCount + " rows\n");
   }
-  process.stdout.write("Finished. Read " + total + " rows. Destination inserts are idempotent (INSERT OR IGNORE).\n");
+
+  const sourceBalances = await source.query(
+    "SELECT COALESCE(SUM(coins), 0)::text AS coins, COALESCE(SUM(balance_milli), 0)::text AS balance_milli, COALESCE(SUM(donated_coins), 0)::text AS donated_coins FROM players",
+  );
+  const destinationBalances = await destination.execute(
+    "SELECT COALESCE(SUM(coins), 0) AS coins, COALESCE(SUM(balance_milli), 0) AS balance_milli, COALESCE(SUM(donated_coins), 0) AS donated_coins FROM players",
+  );
+  for (const field of ["coins", "balance_milli", "donated_coins"]) {
+    const expected = BigInt(sourceBalances.rows[0][field]);
+    const actual = BigInt(String(destinationBalances.rows[0][field]));
+    if (expected !== actual) {
+      throw new Error("Balance verification failed for " + field + ": source=" + expected + ", Turso=" + actual);
+    }
+  }
+
+  process.stdout.write(
+    "Migration verified: " + total +
+    " rows copied; total coins, withdraw balance and donated coins match.\n",
+  );
 } finally {
-  await source.end();
-  destination.close();
+  try {
+    await source.end();
+  } finally {
+    destination.close();
+  }
 }
