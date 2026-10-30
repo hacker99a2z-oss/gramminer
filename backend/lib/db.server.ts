@@ -147,6 +147,31 @@ export async function withWriteTransaction<T>(
   }
 }
 
+export async function getTelegramCachedFileId(assetKey: string): Promise<string | null> {
+  const result = await getDb().execute({
+    sql: "SELECT file_id FROM telegram_file_cache WHERE asset_key = ?",
+    args: [assetKey],
+  });
+  if (!result.rows.length) return null;
+  return asText(asRow(result.rows[0])["file_id"]);
+}
+
+export async function setTelegramCachedFileId(assetKey: string, fileId: string): Promise<void> {
+  await getDb().execute({
+    sql: `INSERT INTO telegram_file_cache(asset_key, file_id, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(asset_key) DO UPDATE SET file_id = excluded.file_id, updated_at = excluded.updated_at`,
+    args: [assetKey, fileId, new Date().toISOString()],
+  });
+}
+
+export async function clearTelegramCachedFileId(assetKey: string): Promise<void> {
+  await getDb().execute({
+    sql: "DELETE FROM telegram_file_cache WHERE asset_key = ?",
+    args: [assetKey],
+  });
+}
+
 export function asRow(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
