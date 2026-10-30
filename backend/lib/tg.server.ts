@@ -1,6 +1,11 @@
 // Direct Telegram Bot API integration. No external connector or Lovable credentials.
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import {
+  clearTelegramCachedFileId,
+  getTelegramCachedFileId,
+  setTelegramCachedFileId,
+} from "./db.server.ts";
 
 export type TgUser = {
   id: number;
@@ -167,17 +172,44 @@ export async function configureTelegramWebhook(): Promise<void> {
   });
 }
 
+const WELCOME_VIDEO_CACHE_KEY = "gramminer-welcome-video-v1";
+
 async function sendWelcomeVideo(
   chatId: number,
   caption: string,
   replyMarkup: { inline_keyboard: Array<Array<Record<string, unknown>>> },
 ): Promise<void> {
+  const messageOptions = {
+    chat_id: chatId,
+    supports_streaming: true,
+    caption,
+    parse_mode: "HTML",
+    reply_markup: replyMarkup,
+  };
+
+  // Telegram file_ids are reusable by this bot. Reuse the cached id so
+  // every /start after the first upload avoids sending the 14 MB video again.
+  const cachedFileId = await getTelegramCachedFileId(WELCOME_VIDEO_CACHE_KEY);
+  if (cachedFileId) {
+    try {
+      await botApi("sendVideo", { ...messageOptions, video: cachedFileId });
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/wrong file identifier|file identifier|file reference|file_id/i.test(message)) {
+        throw error;
+      }
+      console.warn("[telegram] cached welcome video file_id was rejected; uploading the video again");
+      await clearTelegramCachedFileId(WELCOME_VIDEO_CACHE_KEY);
+    }
+  }
+
   let video: Buffer;
   try {
     // Prefer the raw MP4 asset so replacing the welcome video does not require Base64 conversion.
     video = await readFile(new URL("./assets/gramminer-welcome.mp4", import.meta.url));
   } catch {
-    // Keep the bundled Base64 video as a fallback until a custom MP4 is uploaded.
+    // Keep the bundled Base64 video as a fallback for older deployments.
     const encoded = await readFile(new URL("./assets/gramminer-welcome.mp4.b64", import.meta.url), "utf8");
     video = Buffer.from(encoded.trim(), "base64");
   }
@@ -197,7 +229,11 @@ async function sendWelcomeVideo(
     cache: "no-store",
   });
   const raw = await response.text();
-  let payload: { ok?: boolean; description?: string } = {};
+  let payload: {
+    ok?: boolean;
+    description?: string;
+    result?: { video?: { file_id?: string } };
+  } = {};
   try {
     payload = raw ? JSON.parse(raw) as typeof payload : {};
   } catch {
@@ -205,6 +241,14 @@ async function sendWelcomeVideo(
   }
   if (!response.ok || !payload.ok) {
     throw new Error(payload.description ?? `Telegram sendVideo failed (${response.status})`);
+  }
+
+  const fileId = payload.result?.video?.file_id;
+  if (fileId) {
+    // Do not fail delivery if only the optional cache write fails.
+    await setTelegramCachedFileId(WELCOME_VIDEO_CACHE_KEY, fileId).catch((error) => {
+      console.error("[telegram] could not cache welcome video file_id", error);
+    });
   }
 }
 
