@@ -8,7 +8,10 @@
   "scripts": {
     "start:api": "node --experimental-strip-types backend/server.ts",
     "migrate:supabase-to-turso": "node scripts/migrate-supabase-to-turso.mjs",
-    "db:migrate": "node --experimental-strip-types backend/migrate.ts"
+    "db:migrate": "node --experimental-strip-types backend/migrate.ts",
+    "dev:worker": "wrangler dev",
+    "build:worker": "wrangler deploy --dry-run",
+    "deploy:worker": "wrangler deploy"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",
@@ -17,5 +20,8 @@
     "@ton/ton": "^16.3.0",
     "pg": "^8.23.1",
     "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "wrangler": "^4.156.0"
   }
 }

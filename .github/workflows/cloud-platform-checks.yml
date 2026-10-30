@@ -6,9 +6,10 @@ on:
       - "Dockerfile"
       - ".dockerignore"
       - "package.json"
+      - "wrangler.jsonc"
       - "backend/**"
       - "frontend/**"
-      - "CLOUD_DEPLOYMENT.md"
+      - "*.md"
       - ".github/workflows/cloud-platform-checks.yml"
   push:
     branches:
@@ -17,21 +18,36 @@ on:
       - "Dockerfile"
       - ".dockerignore"
       - "package.json"
+      - "wrangler.jsonc"
       - "backend/**"
       - "frontend/**"
+      - "*.md"
       - ".github/workflows/cloud-platform-checks.yml"
 
 permissions:
   contents: read
 
 jobs:
-  backend-container:
-    name: Build Cloud Run backend image
+  node-backend-rollback:
+    name: Build Node payout and rollback image
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build backend container
-        run: docker build --tag gramminer-backend:ci .
+      - name: Build Node backend container
+        run: docker build --tag gramminer-node-backend:ci .
+
+  cloudflare-worker:
+    name: Bundle Cloudflare Workers backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install root dependencies
+        run: npm install --no-audit --no-fund
+      - name: Bundle Worker without deploying
+        run: npm run build:worker
 
   cloudflare-pages:
     name: Build and validate Cloudflare Pages frontend
