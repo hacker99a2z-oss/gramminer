@@ -148,15 +148,25 @@ async function postProofs(ids: string[]) {
       "⛏ Gram Miner — auto withdrawal";
 
     try {
-      await botApi("sendMessage", {
+      const posted = await botApi<{
+        message_id: number;
+        chat: { id: number; username?: string };
+      }>("sendMessage", {
         chat_id: chat,
         text: message,
         parse_mode: "HTML",
         disable_web_page_preview: true,
       });
+      const username = posted.chat.username ?? (chat.startsWith("@") ? chat.slice(1) : "");
+      const chatId = String(posted.chat.id);
+      const proofMessageUrl = username
+        ? `https://t.me/${username}/${posted.message_id}`
+        : chatId.startsWith("-100")
+          ? `https://t.me/c/${chatId.slice(4)}/${posted.message_id}`
+          : null;
       await getDb().execute({
-        sql: "UPDATE withdrawals SET proof_posted = 1 WHERE id = ?",
-        args: [asText(withdrawal["id"])],
+        sql: "UPDATE withdrawals SET proof_posted = 1, proof_message_url = ? WHERE id = ?",
+        args: [proofMessageUrl, asText(withdrawal["id"])],
       });
     } catch (error) {
       console.error("proof post failed", error);
