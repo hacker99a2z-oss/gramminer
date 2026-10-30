@@ -1,0 +1,49 @@
+name: Cloud platform build checks
+
+on:
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "package.json"
+      - "backend/**"
+      - "frontend/**"
+      - ".github/workflows/cloud-platform-checks.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "package.json"
+      - "backend/**"
+      - "frontend/**"
+      - ".github/workflows/cloud-platform-checks.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  backend-container:
+    name: Build Cloud Run backend image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build backend container
+        run: docker build --tag gramminer-backend:ci .
+
+  cloudflare-worker:
+    name: Build Cloudflare frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install frontend dependencies
+        run: npm install --no-audit --no-fund
+      - name: Build for Cloudflare Workers
+        run: npm run build:cloudflare
