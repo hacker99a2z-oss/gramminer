@@ -107,7 +107,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     const poll = async () => {
       try {
         const latest = await getWithdrawalStatus({ data: { initData } });
-        if (active) setState(latest);
+        if (active) updateState(latest);
       } catch (pollError) {
         console.error("Could not refresh withdrawal status", pollError);
       }
@@ -118,7 +118,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       active = false;
       clearInterval(timer);
     };
-  }, [hasOpenWithdrawals, initData]);
+  }, [hasOpenWithdrawals, initData, updateState]);
 
   return (
     <GameCtx.Provider value={{ ready, initData, user, state, setState: updateState, error, botUsername, proofUrl, refresh }}>
