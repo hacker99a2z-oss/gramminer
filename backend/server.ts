@@ -193,7 +193,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     // Prefer an Authorization header so scheduled workers do not put the
     // payout secret into URLs or access logs. Keep query-key support for
     // existing manual/cron callers during the transition.
-    const bearer = /^Bearer\\s+(.+)$/i.exec(req.headers.authorization ?? "")?.[1] ?? "";
+    const bearer = /^Bearer\s+(.+)$/i.exec(req.headers.authorization ?? "")?.[1] ?? "";
     const key = bearer || url.searchParams.get("key") || "";
     const supplied = Buffer.from(key);
     const configured = Buffer.from(secret ?? "");
