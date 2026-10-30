@@ -172,8 +172,15 @@ async function sendWelcomeVideo(
   caption: string,
   replyMarkup: { inline_keyboard: Array<Array<Record<string, unknown>>> },
 ): Promise<void> {
-  const encoded = await readFile(new URL("./assets/gramminer-welcome.mp4.b64", import.meta.url), "utf8");
-  const video = Buffer.from(encoded.trim(), "base64");
+  let video: Buffer;
+  try {
+    // Prefer the raw MP4 asset so replacing the welcome video does not require Base64 conversion.
+    video = await readFile(new URL("./assets/gramminer-welcome.mp4", import.meta.url));
+  } catch {
+    // Keep the bundled Base64 video as a fallback until a custom MP4 is uploaded.
+    const encoded = await readFile(new URL("./assets/gramminer-welcome.mp4.b64", import.meta.url), "utf8");
+    video = Buffer.from(encoded.trim(), "base64");
+  }
   if (!video.length) throw new Error("Welcome video asset is empty");
 
   const form = new FormData();
