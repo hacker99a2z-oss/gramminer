@@ -172,6 +172,43 @@ export async function configureTelegramWebhook(): Promise<void> {
   });
 }
 
+const WELCOME_VIDEO_URL =
+  "https://raw.githubusercontent.com/hacker99a2z-oss/gramminer/main/backend/lib/assets/gramminer-welcome.mp4";
+
+/**
+ * Telegram can execute a Bot API method from the webhook HTTP response.
+ * This avoids a separate outbound connection from Render to api.telegram.org.
+ */
+export function startWelcomeWebhookReply(chatId: number): Record<string, unknown> {
+  const appUrl = telegramHttpsUrl(process.env["BOT_APP_URL"]) ??
+    "https://play-for-win-himu6.vercel.app";
+  const officialChannel = telegramHttpsUrl(process.env["BOT_OFFICIAL_CHANNEL_URL"]);
+  const supportGroup = telegramHttpsUrl(process.env["BOT_SUPPORT_GROUP_URL"]);
+
+  const caption = [
+    "🎮 <b>Welcome to Gram Miner!</b>",
+    "⛏️ <b>1. Mine</b> — Start miners and collect coins.",
+    "🎁 <b>2. Earn</b> — Get bonus coins from ads and referrals.",
+    "💎 <b>3. Withdraw</b> — Cash out to your TON wallet from $0.03.",
+  ].join("\\n\\n");
+
+  const inlineKeyboard: Array<Array<Record<string, unknown>>> = [
+    [{ text: "🚀 Open App", web_app: { url: appUrl } }],
+  ];
+  if (officialChannel) inlineKeyboard.push([{ text: "📢 Official Channel", url: officialChannel }]);
+  if (supportGroup) inlineKeyboard.push([{ text: "💬 Supported Group", url: supportGroup }]);
+
+  return {
+    method: "sendVideo",
+    chat_id: chatId,
+    video: WELCOME_VIDEO_URL,
+    supports_streaming: true,
+    caption,
+    parse_mode: "HTML",
+    reply_markup: { inline_keyboard: inlineKeyboard },
+  };
+}
+
 const WELCOME_VIDEO_CACHE_KEY = "gramminer-welcome-video-v1";
 
 async function sendWelcomeVideo(
