@@ -1,4 +1,4 @@
-import { proxyBackendGet } from "../../../_utils/proxy";
+import { proxyBackendGet } from "../../_utils/proxy";
 
 interface Env {
   BACKEND_URL: string;
