@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AD_COOLDOWN_MS, AD_REWARD_COINS, DAILY_BONUS_COINS, MINERS, REFERRAL_REWARD_COINS, minerReadyAt, usd } from "./rules";
+import { AD_COOLDOWN_MS, AD_REWARD_COINS, DAILY_BONUS_COINS, MINERS, MIN_WITHDRAW_MILLI, REFERRAL_REWARD_COINS, minerReadyAt, usd } from "./rules";
 
 describe("Gram Miner rules", () => {
   it("miner prices, times and rewards match the spec", () => {
@@ -19,6 +19,10 @@ describe("Gram Miner rules", () => {
   });
   it("miner 5 is ready 30 minutes after start", () => {
     expect(minerReadyAt(0, 5)).toBe(30 * 60_000);
+  });
+  it("enforces the $0.03 minimum withdrawal", () => {
+    expect(MIN_WITHDRAW_MILLI).toBe(30);
+    expect(usd(MIN_WITHDRAW_MILLI)).toBe("$0.03");
   });
   it("formats dollars", () => {
     expect(usd(5)).toBe("$0.005");
