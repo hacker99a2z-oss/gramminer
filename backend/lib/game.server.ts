@@ -56,7 +56,7 @@ export async function snapshot(tgId: number) {
     db.execute({ sql: "SELECT * FROM players WHERE tg_id = ?", args: [tgId] }),
     db.execute({ sql: "SELECT miner_id, started_at FROM miners WHERE tg_id = ? ORDER BY miner_id", args: [tgId] }),
     db.execute({
-      sql: "SELECT id, amount_milli, nano, address, status, created_at FROM withdrawals WHERE tg_id = ? ORDER BY created_at DESC LIMIT ?",
+      sql: "SELECT id, amount_milli, nano, address, status, created_at, proof_message_url FROM withdrawals WHERE tg_id = ? ORDER BY created_at DESC LIMIT ?",
       args: [tgId, WITHDRAW_HISTORY_LIMIT],
     }),
   ]);
@@ -87,6 +87,7 @@ export async function snapshot(tgId: number) {
         address: asText(withdrawal["address"]),
         status: asText(withdrawal["status"]),
         createdAt: new Date(asText(withdrawal["created_at"])).getTime(),
+        proofMessageUrl: withdrawal["proof_message_url"] ? asText(withdrawal["proof_message_url"]) : null,
       };
     }),
   };
