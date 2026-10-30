@@ -190,7 +190,11 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
 
   if (req.method === "GET" && url.pathname === "/api/public/payout") {
     const secret = process.env["PAYOUT_CRON_SECRET"];
-    const key = url.searchParams.get("key") ?? "";
+    // Prefer an Authorization header so scheduled workers do not put the
+    // payout secret into URLs or access logs. Keep query-key support for
+    // existing manual/cron callers during the transition.
+    const bearer = /^Bearer\s+(.+)$/i.exec(req.headers.authorization ?? "")?.[1] ?? "";
+    const key = bearer || url.searchParams.get("key") || "";
     const supplied = Buffer.from(key);
     const configured = Buffer.from(secret ?? "");
     if (!secret || supplied.length !== configured.length || !timingSafeEqual(supplied, configured)) {

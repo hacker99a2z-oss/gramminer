@@ -1,0 +1,28 @@
+name: Gram Miner payout processor
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: gramminer-payout-processor
+  cancel-in-progress: false
+
+jobs:
+  payout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      PAYOUT_CRON_SECRET: ${{ secrets.PAYOUT_CRON_SECRET }}
+    steps:
+      - name: Skip until the repository secret is configured
+        if: ${{ env.PAYOUT_CRON_SECRET == '' }}
+        run: echo "::notice::Add the PAYOUT_CRON_SECRET repository secret to enable payout retries."
+
+      - name: Process pending withdrawals
+        if: ${{ env.PAYOUT_CRON_SECRET != '' }}
+        run: |
+          curl --fail --silent --show-error --max-time 240 \
+            --header "Authorization: Bearer ${PAYOUT_CRON_SECRET}" \
+            https://gramminer-backend.onrender.com/api/public/payout

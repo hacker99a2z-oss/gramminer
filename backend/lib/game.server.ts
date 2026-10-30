@@ -7,6 +7,15 @@ import { getTonUsd, runPayouts } from "./payout.server.ts";
 const SESSION_TTL_MS = 5 * 60 * 1000;
 const SESSION_RE = /^[a-f0-9]{32}$/;
 
+type LeaderboardPayload = {
+  top: Array<{ id: number; name: string; photoUrl: string | null; coins: number }>;
+  total: number;
+};
+
+const LEADERBOARD_CACHE_TTL_MS = 15_000;
+let leaderboardCache: { expiresAt: number; value: LeaderboardPayload } | null = null;
+let leaderboardInFlight: Promise<LeaderboardPayload> | null = null;
+
 function requireChanged(rowsAffected: number, message: string) {
   if (rowsAffected < 1) throw new Error(message);
 }
@@ -16,37 +25,43 @@ function utcDate() {
 }
 
 async function ensurePlayer(tg: TgUser) {
-  await withWriteTransaction(async (tx) => {
-    const existing = await tx.execute({
-      sql: "SELECT tg_id FROM players WHERE tg_id = ?",
-      args: [tg.id],
-    });
+  // A single conditional UPSERT keeps returning-player loads lightweight:
+  // unchanged profiles do not generate a database write.
+  const refText = tg.start_param?.startsWith("ref_") ? tg.start_param.slice(4) : "";
+  const parsedRefId = refText.length > 0 && refText.length <= 20 &&
+      [...refText].every((char) => char >= "0" && char <= "9")
+    ? Number(refText)
+    : null;
+  const refId = parsedRefId && Number.isSafeInteger(parsedRefId) && parsedRefId !== tg.id
+    ? parsedRefId
+    : null;
+  const username = tg.username ?? null;
+  const photoUrl = tg.photo_url ?? null;
 
-    if (existing.rows.length === 0) {
-      const ref = /^ref_(\d{1,20})$/.exec(tg.start_param ?? "")?.[1];
-      const refId = ref ? Number(ref) : null;
-      let referredBy: number | null = null;
-      if (refId && Number.isSafeInteger(refId) && refId !== tg.id) {
-        const referred = await tx.execute({
-          sql: "SELECT tg_id FROM players WHERE tg_id = ?",
-          args: [refId],
-        });
-        if (referred.rows.length) referredBy = refId;
-      }
-
-      await tx.execute({
-        sql: `INSERT INTO players
-          (tg_id, first_name, username, photo_url, referred_by, created_at)
-          VALUES (?, ?, ?, ?, ?, ?)
-          ON CONFLICT(tg_id) DO NOTHING`,
-        args: [tg.id, tg.first_name, tg.username ?? null, tg.photo_url ?? null, referredBy, new Date().toISOString()],
-      });
-    } else {
-      await tx.execute({
-        sql: "UPDATE players SET first_name = ?, username = ?, photo_url = ? WHERE tg_id = ?",
-        args: [tg.first_name, tg.username ?? null, tg.photo_url ?? null, tg.id],
-      });
-    }
+  await getDb().execute({
+    sql: `INSERT INTO players
+      (tg_id, first_name, username, photo_url, referred_by, created_at)
+      VALUES (?, ?, ?, ?, CASE
+        WHEN ? IS NOT NULL AND EXISTS (SELECT 1 FROM players WHERE tg_id = ?) THEN ?
+        ELSE NULL
+      END, ?)
+      ON CONFLICT(tg_id) DO UPDATE SET
+        first_name = excluded.first_name,
+        username = excluded.username,
+        photo_url = excluded.photo_url
+      WHERE players.first_name IS NOT excluded.first_name
+        OR players.username IS NOT excluded.username
+        OR players.photo_url IS NOT excluded.photo_url`,
+    args: [
+      tg.id,
+      tg.first_name,
+      username,
+      photoUrl,
+      refId,
+      refId,
+      refId,
+      new Date().toISOString(),
+    ],
   });
 }
 
@@ -102,11 +117,7 @@ export async function load(initData: string) {
   const tg = await auth(initData);
   await ensurePlayer(tg);
 
-  const open = await getDb().execute(
-    "SELECT COUNT(*) AS count FROM withdrawals WHERE status IN ('pending', 'sending')",
-  );
-  if (asNumber(asRow(open.rows[0])["count"]) > 0) await runPayouts();
-
+  // Payout processing must never run in the interactive game-load path.
   const bot = await getBot().catch(() => null);
   return { state: await snapshot(tg.id), botUsername: bot?.username ?? null, proofUrl: proofChannelUrl() };
 }
@@ -194,10 +205,11 @@ export async function donate(initData: string) {
     });
     requireChanged(result.rowsAffected, "You need 100 coins to donate");
   });
+  leaderboardCache = null;
   return snapshot(tg.id);
 }
 
-export async function leaderboard() {
+async function fetchLeaderboard(): Promise<LeaderboardPayload> {
   const db = getDb();
   const [topResult, totalResult] = await Promise.all([
     db.execute({
@@ -219,6 +231,29 @@ export async function leaderboard() {
     }),
     total: asNumber(asRow(totalResult.rows[0])["total"]),
   };
+}
+
+export async function leaderboard(): Promise<LeaderboardPayload> {
+  const now = Date.now();
+  if (leaderboardCache && leaderboardCache.expiresAt > now) {
+    return leaderboardCache.value;
+  }
+
+  // Collapse concurrent refreshes into one pair of Turso queries per instance.
+  if (!leaderboardInFlight) {
+    const request = fetchLeaderboard();
+    leaderboardInFlight = request.then((value) => {
+      leaderboardCache = {
+        value,
+        expiresAt: Date.now() + LEADERBOARD_CACHE_TTL_MS,
+      };
+      return value;
+    }).finally(() => {
+      leaderboardInFlight = null;
+    });
+  }
+
+  return leaderboardInFlight;
 }
 
 export async function referrals(initData: string) {
@@ -305,6 +340,8 @@ export async function withdraw(initData: string, milli: number, address: string)
     });
   });
 
+  // Try to process immediately for the user; the scheduled processor is a fallback
+  // for pending withdrawals and in-flight batches when no user is online.
   await runPayouts();
   return snapshot(tg.id);
 }
