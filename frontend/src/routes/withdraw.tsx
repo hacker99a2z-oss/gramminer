@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { ExternalLink, Wallet } from "lucide-react";
 import { toast } from "sonner";
@@ -10,19 +9,7 @@ import { MIN_WITHDRAW_MILLI, usd } from "@/lib/rules";
 import { getWallet, shortAddr, useWalletAddress } from "@/lib/wallet";
 import { haptic } from "@/lib/telegram";
 
-export const Route = createFileRoute("/withdraw")({
-  head: () => ({
-    meta: [
-      { title: "Withdraw — Gram Miner" },
-      { name: "description", content: "Withdraw your Gram Miner earnings automatically to your Tonkeeper wallet." },
-      { property: "og:title", content: "Withdraw — Gram Miner" },
-      { property: "og:description", content: "Automatic withdrawals to Tonkeeper." },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
-    ],
-  }),
-  component: Withdraw,
-});
+export const Route = createFileRoute("/withdraw")({ component: Withdraw });
 
 const statusLabel: Record<string, string> = { sending: "pending" };
 
@@ -35,7 +22,7 @@ const statusStyle: Record<string, string> = {
 
 function Withdraw() {
   const game = useGame();
-  const send = useServerFn(requestWithdraw);
+  const send = (requestWithdraw);
   const address = useWalletAddress();
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
