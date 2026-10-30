@@ -13,8 +13,6 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "deploy": "npm run deploy:pages",
-    "cf-typegen": "wrangler types",
-    "build:cloudflare": "vite build --config vite.cloudflare.config.ts",
     "build:pages": "vite build --config vite.pages.config.ts",
     "preview:pages": "wrangler pages dev dist",
     "deploy:pages": "npm run build:pages && wrangler pages deploy dist --project-name=gramminer-frontend"
