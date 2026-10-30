@@ -5,7 +5,7 @@ import { z } from "zod";
 import * as game from "./lib/game.server.ts";
 import { closeDatabase, getDb, initializeDatabase } from "./lib/db.server.ts";
 import { runPayouts } from "./lib/payout.server.ts";
-import { configureTelegramWebhook, sendStartWelcome, verifyTelegramWebhookSecret } from "./lib/tg.server.ts";
+import { configureTelegramWebhook, startWelcomeWebhookReply, verifyTelegramWebhookSecret } from "./lib/tg.server.ts";
 
 const initData = z.string().min(1).max(4096);
 const withInit = z.object({ initData });
@@ -129,13 +129,12 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       typeof message?.text === "string" &&
       /^\/start(?:@\w+)?(?:\s|$)/i.test(message.text);
 
-    // Acknowledge Telegram immediately. Send the welcome post in the background
-    // so a large first-time video upload cannot make Telegram retry the update.
-    json(res, 200, { ok: true });
+    // Telegram supports executing a Bot API method directly from the webhook response.
+    // This avoids a separate outbound connection from Render to api.telegram.org.
     if (isStart) {
-      void sendStartWelcome(chatId).catch((error) => {
-        console.error("[telegram] failed to send /start welcome", error);
-      });
+      json(res, 200, startWelcomeWebhookReply(chatId));
+    } else {
+      json(res, 200, { ok: true });
     }
     return;
   }
