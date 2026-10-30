@@ -27,6 +27,7 @@ const postRoutes: Record<string, (body: unknown) => Promise<unknown>> = {
     const data = z.object({ initData, friendId: z.number().int().positive() }).parse(body);
     return game.claimReferral(data.initData, data.friendId);
   },
+  "/api/game/withdrawal-status": async (body) => game.withdrawalStatus(withInit.parse(body).initData),
   "/api/game/withdraw": async (body) => {
     const data = z.object({
       initData,
