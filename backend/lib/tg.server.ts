@@ -75,7 +75,7 @@ export async function verifyInitData(initData: string): Promise<TgUser> {
 
   params.delete("hash");
   const checkString = dataCheckString(params);
-  const secretKey = createHmac("sha256", getBotToken()).update("WebAppData").digest();
+  const secretKey = createHmac("sha256", "WebAppData").update(getBotToken()).digest();
   const expectedHash = createHmac("sha256", secretKey).update(checkString).digest();
   const suppliedHash = Buffer.from(receivedHash, "hex");
 
