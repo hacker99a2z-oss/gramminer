@@ -13,6 +13,7 @@ export type Snapshot = {
     address: string;
     status: string;
     createdAt: number;
+    proofMessageUrl: string | null;
   }>;
 };
 
