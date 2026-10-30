@@ -1,29 +1,37 @@
-# Welcome to your Lovable project
+# Gram Miner
 
-This project was built with [Lovable](https://lovable.dev).
+Gram Miner is a Telegram Mini App built with React, TanStack Start, TypeScript, Supabase PostgreSQL, AdsGram, and TON Connect.
 
-## Build with Lovable
+## Repository structure
 
-Open your project in the [Lovable editor](https://lovable.dev) and keep building.
+- `frontend/` — complete browser UI, pages/routes, React components, Telegram WebApp client helper, AdsGram client, TON Connect client, SSR and Vercel configuration.
+- `backend/` — standalone API server, game rules and database operations, Telegram Bot API integration, Supabase admin client, TON payouts, and database migrations.
+- Root `package.json` — backend runtime dependencies and Render start command.
+- Root `render.yaml` — Render service configuration.
 
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: connect the project to GitHub and every change made in Lovable is committed straight to your repository.
-- **Full ownership**: this code is yours. Push to your repository and your changes sync back into Lovable, ready for your next prompt.
+Lovable is not used for builds, runtime, API calls, error reporting, authentication, or Telegram integration. Telegram Bot API requests go directly to Telegram using `TELEGRAM_BOT_TOKEN`.
 
-## Development
+## Local development
 
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+Requires Node.js 22.18 or newer.
 
+Frontend:
 ```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
+cd frontend
+npm install
 npm run dev
 ```
 
-## Built with
+Backend, from repository root:
+```sh
+npm install
+npm run start:api
+```
 
-- TanStack Start
-- TypeScript
-- React
-- Tailwind CSS
+## Deployment
+
+- Vercel Root Directory: `frontend`
+- Render Root Directory: repository root
+- Supabase PostgreSQL remains the database. Existing tables and atomic `gm_*` functions are retained.
+
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for environment-variable instructions. Never commit real `.env` files, Supabase service-role keys, Telegram bot tokens, AdsGram secrets, payout secrets, or TON wallet mnemonics.
