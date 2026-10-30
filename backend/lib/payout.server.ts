@@ -99,6 +99,14 @@ function parseIds(value: unknown): string[] {
   }
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
 async function postProofs(ids: string[]) {
   const chat = process.env["PAYMENT_PROOF_CHAT_ID"];
   if (!chat || !ids.length) return;
@@ -116,18 +124,27 @@ async function postProofs(ids: string[]) {
       args: [asNumber(withRow(withdrawal, "tg_id"))],
     });
     const player = playerResult.rows[0] ? asRow(playerResult.rows[0]) : {};
-    const ton = (Number(BigInt(asText(withdrawal["nano"]))) / 1e9).toFixed(4);
+    const nano = BigInt(asText(withdrawal["nano"]));
+    const ton = (Number(nano) / 1e9).toFixed(9).replace(/\.?0+$/, "");
     const address = asText(withdrawal["address"]);
-    const shortAddress = address.slice(0, 6) + "…" + address.slice(-6);
-    const name = asText(player["first_name"] || "Miner").replace(/[<>&]/g, "");
-    const username = player["username"] ? " (@" + asText(player["username"]) + ")" : "";
+    const name = escapeHtml(asText(player["first_name"] || "Miner"));
+    const username = player["username"] ? " (@" + escapeHtml(asText(player["username"])) + ")" : "";
+    const telegramId = asText(withdrawal["tg_id"]);
+    const withdrawalId = escapeHtml(asText(withdrawal["id"]));
+    const sentAtRaw = asText(withdrawal["sent_at"] || withdrawal["created_at"]);
+    const sentAt = Number.isNaN(Date.parse(sentAtRaw))
+      ? sentAtRaw
+      : new Date(sentAtRaw).toISOString().replace("T", " ").replace(/\.\d{3}Z$/, " UTC");
     const message =
-      "✅ <b>New Withdrawal Paid</b>\n\n" +
-      "👤 User: <b>" + name + "</b>" + username + "\n" +
-      "🆔 ID: <code>" + asText(withdrawal["tg_id"]) + "</code>\n" +
-      "💵 Amount: <b>$" + (asNumber(withdrawal["amount_milli"]) / 1000).toFixed(3) + "</b> (" + ton + " TON)\n" +
-      "👛 Wallet: <code>" + shortAddress + "</code>\n" +
-      "🔗 <a href=\"https://tonviewer.com/" + address + "\">View on Tonviewer</a>\n\n" +
+      "✅ <b>Withdrawal sent</b>\\n\\n" +
+      "👤 User: <b>" + name + "</b>" + username + "\\n" +
+      "🆔 Telegram ID: <code>" + telegramId + "</code>\\n" +
+      "💵 USD amount: <b>$" + (asNumber(withdrawal["amount_milli"]) / 1000).toFixed(3) + "</b>\\n" +
+      "💎 TON amount: <b>" + ton + " TON</b>\\n" +
+      "👛 Wallet: <code>" + escapeHtml(address) + "</code>\\n" +
+      "🧾 Withdrawal ID: <code>" + withdrawalId + "</code>\\n" +
+      "🕒 Sent at: <code>" + escapeHtml(sentAt) + "</code>\\n" +
+      "🔗 <a href=\\"https://tonviewer.com/" + encodeURIComponent(address) + "\\">View wallet on Tonviewer</a>\\n\\n" +
       "⛏ Gram Miner — auto withdrawal";
 
     try {
