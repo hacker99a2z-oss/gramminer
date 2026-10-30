@@ -8,6 +8,7 @@ on:
       - "package.json"
       - "backend/**"
       - "frontend/**"
+      - "CLOUD_DEPLOYMENT.md"
       - ".github/workflows/cloud-platform-checks.yml"
   push:
     branches:
@@ -33,7 +34,7 @@ jobs:
         run: docker build --tag gramminer-backend:ci .
 
   cloudflare-worker:
-    name: Build and validate Cloudflare Worker frontend
+    name: Build and validate Cloudflare Pages frontend
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -46,6 +47,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm install --no-audit --no-fund
       - name: Build for Cloudflare Workers
-        run: npm run build:cloudflare
-      - name: Validate Wrangler deployment bundle
-        run: npx wrangler deploy --dry-run
+        run: npm run build:pages
+      - name: Validate Pages output
+        run: |
+          test -f dist/index.html
+          test -f dist/_shell.html
+          test -f dist/_routes.json
