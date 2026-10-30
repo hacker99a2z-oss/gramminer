@@ -1,8 +1,8 @@
 import { Address } from "@ton/core";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { AD_COOLDOWN_MS, LEADERBOARD_SIZE, MIN_WITHDRAW_MILLI, WITHDRAW_HISTORY_LIMIT, minerById } from "./rules";
-import { getBot, proofChannelUrl, verifyInitData, type TgUser } from "./tg.server";
-import { getTonUsd, runPayouts } from "./payout.server";
+import { supabaseAdmin } from "../integrations/supabase/client.server.ts";
+import { AD_COOLDOWN_MS, LEADERBOARD_SIZE, MIN_WITHDRAW_MILLI, WITHDRAW_HISTORY_LIMIT, minerById } from "./rules.ts";
+import { getBot, proofChannelUrl, verifyInitData, type TgUser } from "./tg.server.ts";
+import { getTonUsd, runPayouts } from "./payout.server.ts";
 
 const SESSION_TTL_MS = 5 * 60 * 1000;
 const SESSION_RE = /^[a-f0-9]{32}$/;

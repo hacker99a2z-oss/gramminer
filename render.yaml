@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: gramminer-backend
+    runtime: node
+    plan: free
+    buildCommand: npm install --omit=dev
+    startCommand: npm run start:api
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 22.18.0
+      - key: FRONTEND_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: LOVABLE_API_KEY
+        sync: false
+      - key: TELEGRAM_API_KEY
+        sync: false
+      - key: ADSGRAM_REWARD_SECRET
+        sync: false
+      - key: PAYOUT_CRON_SECRET
+        sync: false
+      - key: TON_WALLET_MNEMONIC
+        sync: false
+      - key: TONCENTER_API_KEY
+        sync: false
+      - key: TON_WALLET_VERSION
+        value: v5r1
+      - key: PAYMENT_PROOF_CHAT_ID
+        sync: false
+      - key: PAYMENTS_PROOF_URL
+        sync: false

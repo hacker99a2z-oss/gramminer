@@ -4,8 +4,8 @@
 import { Address, beginCell, external, internal, SendMode, storeMessage } from "@ton/core";
 import { WalletContractV4, WalletContractV5R1 } from "@ton/ton";
 import { mnemonicToPrivateKey } from "@ton/crypto";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { botApi } from "./tg.server";
+import { supabaseAdmin } from "../integrations/supabase/client.server.ts";
+import { botApi } from "./tg.server.ts";
 
 const TONCENTER = "https://toncenter.com/api/v2";
 const RETRY_AFTER_MS = 90_000;
@@ -45,11 +45,11 @@ async function wallet() {
 
 async function tc<T>(path: string, init?: RequestInit): Promise<T> {
   for (let i = 0; i < 3; i++) {
-    const r = await fetch(`${TONCENTER}${path}`, { ...init, headers: headers() });
+    const r = await fetch(TONCENTER + path, { ...init, headers: headers() });
     const j = (await r.json().catch(() => ({}))) as { ok?: boolean; result?: T; error?: string };
     if (r.ok && j.ok) return j.result as T;
     await new Promise((res) => setTimeout(res, 1200 * (i + 1)));
-    if (i === 2) throw new Error(j.error ?? `toncenter ${r.status}`);
+    if (i === 2) throw new Error(j.error ?? "toncenter " + r.status);
   }
   throw new Error("toncenter failed");
 }
@@ -64,7 +64,7 @@ async function getSeqno(address: string): Promise<number> {
 }
 
 async function getBalance(address: string): Promise<bigint> {
-  return BigInt(await tc<string>(`/getAddressBalance?address=${encodeURIComponent(address)}`));
+  return BigInt(await tc<string>("/getAddressBalance?address=" + encodeURIComponent(address)));
 }
 
 async function acquireLock(): Promise<boolean> {
@@ -82,16 +82,16 @@ async function postProofs(ids: string[]) {
   for (const w of rows ?? []) {
     const { data: p } = await supabaseAdmin.from("players").select("first_name, username").eq("tg_id", w.tg_id).maybeSingle();
     const ton = (Number(BigInt(w.nano)) / 1e9).toFixed(4);
-    const addr = `${w.address.slice(0, 6)}…${w.address.slice(-6)}`;
+    const addr = w.address.slice(0, 6) + "…" + w.address.slice(-6);
     const name = (p?.first_name ?? "Miner").replace(/[<>&]/g, "");
     const text =
-      `✅ <b>New Withdrawal Paid</b>\n\n` +
-      `👤 User: <b>${name}</b>${p?.username ? ` (@${p.username})` : ""}\n` +
-      `🆔 ID: <code>${w.tg_id}</code>\n` +
-      `💵 Amount: <b>$${(w.amount_milli / 1000).toFixed(3)}</b> (${ton} TON)\n` +
-      `👛 Wallet: <code>${addr}</code>\n` +
-      `🔗 <a href="https://tonviewer.com/${w.address}">View on Tonviewer</a>\n\n` +
-      `⛏ Gram Miner — auto withdrawal`;
+      "✅ <b>New Withdrawal Paid</b>\n\n" +
+      "👤 User: <b>" + name + "</b>" + (p?.username ? " (@" + p.username + ")" : "") + "\n" +
+      "🆔 ID: <code>" + w.tg_id + "</code>\n" +
+      "💵 Amount: <b>$" + (w.amount_milli / 1000).toFixed(3) + "</b> (" + ton + " TON)\n" +
+      "👛 Wallet: <code>" + addr + "</code>\n" +
+      "🔗 <a href=\"https://tonviewer.com/" + w.address + "\">View on Tonviewer</a>\n\n" +
+      "⛏ Gram Miner — auto withdrawal";
     try {
       await botApi("sendMessage", { chat_id: chat, text, parse_mode: "HTML", disable_web_page_preview: true });
       await supabaseAdmin.from("withdrawals").update({ proof_posted: true }).eq("id", w.id);

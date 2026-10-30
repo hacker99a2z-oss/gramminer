@@ -1,29 +1,26 @@
-# Welcome to your Lovable project
+# Gram Miner
 
-This project was built with [Lovable](https://lovable.dev).
-
-## Build with Lovable
-
-Open your project in the [Lovable editor](https://lovable.dev) and keep building.
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: connect the project to GitHub and every change made in Lovable is committed straight to your repository.
-- **Full ownership**: this code is yours. Push to your repository and your changes sync back into Lovable, ready for your next prompt.
+Gram Miner is a Telegram Mini App built with TanStack Start, React, TypeScript, Supabase PostgreSQL, AdsGram, and TON Connect.
 
 ## Development
 
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+Requires Node.js 22.18 or newer.
 
 ```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
+npm install
 npm run dev
 ```
 
-## Built with
+Run the existing tests with `npm test` and create a production frontend build with `npm run build`.
 
-- TanStack Start
-- TypeScript
-- React
-- Tailwind CSS
+## Deployment
+
+The repository is configured for a split deployment:
+
+- **Vercel:** TanStack Start frontend and SSR.
+- **Render:** standalone backend API (`backend/server.ts`).
+- **Supabase:** existing PostgreSQL database, RLS policies, and atomic `gm_*` SQL functions.
+
+Follow [DEPLOYMENT.md](./DEPLOYMENT.md) for the complete deployment steps and required environment variables. Never commit real `.env` files, Supabase service-role keys, Telegram connector keys, AdsGram secrets, payout cron secrets, or TON wallet mnemonics.
+
+The database is intentionally kept on Supabase. Migrating the current PostgreSQL schema and SECURITY DEFINER balance/payout functions to MongoDB would require a separate transactional rewrite and is not part of this deployment split.
