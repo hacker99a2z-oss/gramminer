@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Check, Copy, Send, Users } from "lucide-react";
@@ -11,24 +10,12 @@ import { REFERRAL_REWARD_COINS } from "@/lib/rules";
 import { haptic, tgApp } from "@/lib/telegram";
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 
-export const Route = createFileRoute("/refer")({
-  head: () => ({
-    meta: [
-      { title: "Invite friends — Gram Miner" },
-      { name: "description", content: "Share your Gram Miner link and earn 100 coins for every friend who buys Miner #2." },
-      { property: "og:title", content: "Invite friends — Gram Miner" },
-      { property: "og:description", content: "Earn 100 coins for each friend who buys Miner #2." },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
-    ],
-  }),
-  component: Refer,
-});
+export const Route = createFileRoute("/refer")({ component: Refer });
 
 function Refer() {
   const game = useGame();
-  const list = useServerFn(getReferrals);
-  const claim = useServerFn(claimReferral);
+  const list = (getReferrals);
+  const claim = (claimReferral);
   const qc = useQueryClient();
   const [popup, setPopup] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);

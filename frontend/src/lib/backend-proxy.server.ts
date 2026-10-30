@@ -1,4 +1,4 @@
-// Server-only proxy for public callbacks that must keep their existing Vercel URLs.
+// Server-only proxy for public callbacks routed through the Cloudflare Workers frontend.
 export async function proxyBackendGet(request: Request, path: string): Promise<Response> {
   const backendUrl = process.env["BACKEND_URL"]?.replace(/\/+$/, "");
   if (!backendUrl) {

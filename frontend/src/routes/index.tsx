@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { Gift, Lock, Play, Timer, Zap } from "lucide-react";
 import { toast } from "sonner";
@@ -11,19 +10,7 @@ import { MINERS, minerReadyAt, usd, type MinerRule } from "@/lib/rules";
 import { haptic } from "@/lib/telegram";
 import minerImg from "@/assets/miner.png";
 
-export const Route = createFileRoute("/")({
-  head: () => ({
-    meta: [
-      { title: "Gram Miner — Mine coins & earn" },
-      { name: "description", content: "Claim daily coins, watch ads, buy miners and earn dollars you can withdraw to Tonkeeper." },
-      { property: "og:title", content: "Gram Miner — Mine coins & earn" },
-      { property: "og:description", content: "Claim coins, run miners and withdraw your earnings to Tonkeeper." },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
-    ],
-  }),
-  component: Home,
-});
+export const Route = createFileRoute("/")({ component: Home });
 
 const fmt = (ms: number) => {
   const s = Math.max(0, Math.ceil(ms / 1000));
@@ -32,7 +19,7 @@ const fmt = (ms: number) => {
 
 function BonusCard() {
   const game = useGame();
-  const claim = useServerFn(claimBonus);
+  const claim = (claimBonus);
   const ad = useRewardedAd();
   const [busy, setBusy] = useState(false);
   const bonus = game.state?.bonusAvailable ?? false;
@@ -88,8 +75,8 @@ function BonusCard() {
 function MinerCard({ rule, wide }: { rule: MinerRule; wide?: boolean }) {
   const game = useGame();
   const now = useGameClock();
-  const buy = useServerFn(buyMiner);
-  const claim = useServerFn(claimMiner);
+  const buy = (buyMiner);
+  const claim = (claimMiner);
   const [busy, setBusy] = useState(false);
   const owned = game.state?.miners.find((m) => m.id === rule.id);
   const readyAt = owned ? minerReadyAt(owned.startedAt, rule.id) : 0;

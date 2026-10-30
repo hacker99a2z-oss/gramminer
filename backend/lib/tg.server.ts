@@ -17,7 +17,7 @@ export type TgUser = {
 
 function getBotToken(): string {
   const token = process.env["TELEGRAM_BOT_TOKEN"];
-  if (!token) throw new Error("Telegram bot is not configured. Set TELEGRAM_BOT_TOKEN in Render.");
+  if (!token) throw new Error("Telegram bot is not configured. Set TELEGRAM_BOT_TOKEN in the backend environment.");
   return token;
 }
 
@@ -161,8 +161,8 @@ export function verifyTelegramWebhookSecret(value: string | string[] | undefined
 }
 
 export async function configureTelegramWebhook(): Promise<void> {
-  const baseUrl = telegramHttpsUrl(process.env["PUBLIC_BACKEND_URL"]) ??
-    "https://gramminer-backend.onrender.com";
+  const baseUrl = telegramHttpsUrl(process.env["PUBLIC_BACKEND_URL"]);
+  if (!baseUrl) throw new Error("PUBLIC_BACKEND_URL must be set to the deployed backend HTTPS URL.");
   const url = new URL("/api/telegram/webhook", baseUrl).toString();
   await botApi<boolean>("setWebhook", {
     url,
@@ -176,12 +176,12 @@ const WELCOME_VIDEO_URL =
   "https://cdn.jsdelivr.net/gh/hacker99a2z-oss/gramminer@main/backend/lib/assets/gramminer-welcome.mp4";
 
 /**
- * Telegram can execute a Bot API method from the webhook HTTP response.
- * This avoids a separate outbound connection from Render to api.telegram.org.
+ * Telegram can execute a Bot API method from the webhook response.
  */
 export function startWelcomeWebhookReply(chatId: number): Record<string, unknown> {
   const appUrl = telegramHttpsUrl(process.env["BOT_APP_URL"]) ??
-    "https://play-for-win-himu6.vercel.app";
+    telegramHttpsUrl(process.env["FRONTEND_URL"]);
+  if (!appUrl) throw new Error("BOT_APP_URL or FRONTEND_URL must point to the Mini App HTTPS URL.");
   const officialChannel = telegramHttpsUrl(process.env["BOT_OFFICIAL_CHANNEL_URL"]);
   const supportGroup = telegramHttpsUrl(process.env["BOT_SUPPORT_GROUP_URL"]);
 
@@ -224,8 +224,6 @@ async function sendWelcomeVideo(
     reply_markup: replyMarkup,
   };
 
-  // Telegram file_ids are reusable by this bot. Reuse the cached id so
-  // every /start after the first upload avoids sending the 14 MB video again.
   const cachedFileId = await getTelegramCachedFileId(WELCOME_VIDEO_CACHE_KEY);
   if (cachedFileId) {
     try {
@@ -243,10 +241,8 @@ async function sendWelcomeVideo(
 
   let video: Buffer;
   try {
-    // Prefer the raw MP4 asset so replacing the welcome video does not require Base64 conversion.
     video = await readFile(new URL("./assets/gramminer-welcome.mp4", import.meta.url));
   } catch {
-    // Keep the bundled Base64 video as a fallback for older deployments.
     const encoded = await readFile(new URL("./assets/gramminer-welcome.mp4.b64", import.meta.url), "utf8");
     video = Buffer.from(encoded.trim(), "base64");
   }
@@ -282,7 +278,6 @@ async function sendWelcomeVideo(
 
   const fileId = payload.result?.video?.file_id;
   if (fileId) {
-    // Do not fail delivery if only the optional cache write fails.
     await setTelegramCachedFileId(WELCOME_VIDEO_CACHE_KEY, fileId).catch((error) => {
       console.error("[telegram] could not cache welcome video file_id", error);
     });
@@ -291,7 +286,8 @@ async function sendWelcomeVideo(
 
 export async function sendStartWelcome(chatId: number): Promise<void> {
   const appUrl = telegramHttpsUrl(process.env["BOT_APP_URL"]) ??
-    "https://gramminer-nine.vercel.app";
+    telegramHttpsUrl(process.env["FRONTEND_URL"]);
+  if (!appUrl) throw new Error("BOT_APP_URL or FRONTEND_URL must point to the Mini App HTTPS URL.");
   const officialChannel = telegramHttpsUrl(process.env["BOT_OFFICIAL_CHANNEL_URL"]);
   const supportGroup = telegramHttpsUrl(process.env["BOT_SUPPORT_GROUP_URL"]);
 
@@ -310,7 +306,6 @@ export async function sendStartWelcome(chatId: number): Promise<void> {
 
   const replyMarkup = { inline_keyboard: inlineKeyboard };
   try {
-    // Telegram sends the caption and inline keyboard as part of the same video message.
     await sendWelcomeVideo(chatId, caption, replyMarkup);
   } catch (error) {
     console.error("[telegram] welcome video could not be sent; falling back to a text welcome", error);

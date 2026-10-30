@@ -17,8 +17,8 @@ const errorMiddleware = createMiddleware().server(async ({ next }) => {
   }
 });
 
-// Keep CSRF protection for server functions when the app is split across Vercel
-// (frontend) and Render (API). Telegram initData is verified by the Render API.
+// Keep CSRF protection for server functions exposed by the Cloudflare Workers SSR frontend.
+// Telegram initData is verified independently by the Cloud Run API.
 const csrfMiddleware = createCsrfMiddleware({
   filter: (ctx) => ctx.handlerType === "serverFn",
 });
