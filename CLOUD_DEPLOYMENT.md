@@ -65,7 +65,7 @@ Use Google Cloud project region **asia-southeast1 (Singapore)** for the API.
 
 ## 2. Deploy the frontend to Cloudflare Pages
 
-The current frontend uses TanStack Start. The Pages build enables its SPA mode and uses Nitro's `cloudflare_pages` preset. The application keeps client-side routing but moves all actual game API calls directly to Cloud Run. This avoids invoking a Pages Function for each game action.
+The current frontend uses TanStack Start. The Pages build enables its SPA mode and uses Nitro's static Cloudflare Pages preset. The application keeps client-side routing but moves all actual game API calls directly to Cloud Run. This avoids invoking a Pages Function for each game action.
 
 1. In Cloudflare, open **Workers & Pages → Create application → Pages → Connect to Git** and select `hacker99a2z-oss/gramminer`.
 2. Configure the Pages project:
@@ -80,7 +80,7 @@ The current frontend uses TanStack Start. The Pages build enables its SPA mode a
 3. In Pages > Settings > Variables and Secrets, add the runtime variable:
    - `BACKEND_URL` = the Cloud Run HTTPS service URL, without a trailing slash.
 
-   This is used by the small retained Pages server routes that proxy AdsGram reward callbacks, payout callbacks and the TonConnect manifest. The game screen, mining, referral, donation and withdrawal API calls go straight from the browser to `VITE_BACKEND_URL`.
+   This is used by the Pages Functions that proxy AdsGram reward callbacks and payout callbacks. The TonConnect manifest is generated directly in a small Pages Function. The game screen, mining, referral, donation and withdrawal API calls go straight from the browser to `VITE_BACKEND_URL`.
 
 4. Once Pages gives you the production hostname (for example `https://gramminer.pages.dev`), update Cloud Run:
    - `FRONTEND_URL` = that exact origin.
