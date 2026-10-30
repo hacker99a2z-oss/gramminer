@@ -26,7 +26,7 @@ Set the backend variables in Render > gramminer-backend > Environment.
 - `ADSGRAM_REWARD_SECRET`: randomly generated secret used to authenticate the AdsGram reward callback.
 - `PAYOUT_CRON_SECRET`: a different random secret used to authenticate the payout callback.
 - `TON_WALLET_MNEMONIC`: mnemonic for the dedicated TON payout wallet. Very sensitive.
-- `FRONTEND_URL`: `https://gramminer-nine.vercel.app`.
+- `FRONTEND_URL`: `https://gramminer-himu6.vercel.app`.
 
 ### Optional backend variables
 
@@ -50,7 +50,7 @@ Do not prefix this with `VITE_`; it is only used by server functions and must no
 2. Send `/newbot` and follow its prompts, or use `/mybots` to choose the existing Gram Miner bot.
 3. Open the bot's API Token menu and copy the token.
 4. Add the token as Render's `TELEGRAM_BOT_TOKEN`. Do not paste it in chat, GitHub, Vercel, or any frontend variable.
-5. In BotFather configure the bot's Main Mini App or Menu Button URL to `https://gramminer-nine.vercel.app`.
+5. In BotFather configure the bot's Main Mini App or Menu Button URL to `https://gramminer-himu6.vercel.app`.
 6. If posting payment proofs, add the bot to the proof channel as an administrator with permission to send messages.
 
 The backend uses the official Telegram Bot API directly for `getMe` and `sendMessage`, and validates Telegram Mini App `initData` with the bot-token HMAC-SHA-256 algorithm.
@@ -71,10 +71,10 @@ Generate two independent random values (one for AdsGram and one for payout cron)
 Set the AdsGram secret in Render as `ADSGRAM_REWARD_SECRET`, and configure the same value in the AdsGram callback URL. Set the second value as `PAYOUT_CRON_SECRET`, and configure the payout scheduler URL to use it.
 
 AdsGram callback URL:
-`https://gramminer-nine.vercel.app/api/public/adsgram/reward?key=YOUR_ADSGRAM_REWARD_SECRET&userid=[userId]`
+`https://gramminer-himu6.vercel.app/api/public/adsgram/reward?key=YOUR_ADSGRAM_REWARD_SECRET&userid=[userId]`
 
 Payout callback URL:
-`https://gramminer-nine.vercel.app/api/public/payout?key=YOUR_PAYOUT_CRON_SECRET`
+`https://gramminer-himu6.vercel.app/api/public/payout?key=YOUR_PAYOUT_CRON_SECRET`
 
 AdsGram documents the Telegram user-ID placeholder as `[userId]`; keep this exact placeholder in the Reward URL.
 
