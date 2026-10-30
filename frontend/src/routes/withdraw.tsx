@@ -117,12 +117,24 @@ function Withdraw() {
       ) : (
         <div className="space-y-2">
           {history.map((w) => (
-            <div key={w.id} className="card-gm flex items-center justify-between p-3">
+            <div key={w.id} className="card-gm flex items-center justify-between gap-3 p-3">
               <div>
                 <p className="font-display text-sm font-bold">{usd(w.milli)} <span className="text-xs font-normal text-muted-foreground">· {w.ton.toFixed(4)} TON</span></p>
                 <p className="text-xs text-muted-foreground">Tonkeeper · {shortAddr(w.address)} · {new Date(w.createdAt).toLocaleDateString()}</p>
               </div>
-              <span className={`rounded-full px-2 py-0.5 text-xs font-bold capitalize ${statusStyle[w.status] ?? "bg-secondary"}`}>{statusLabel[w.status] ?? w.status}</span>
+              <div className="flex shrink-0 items-center gap-2">
+                <span className={`rounded-full px-2 py-0.5 text-xs font-bold capitalize ${statusStyle[w.status] ?? "bg-secondary"}`}>{statusLabel[w.status] ?? w.status}</span>
+                {w.status === "sent" && w.proofMessageUrl && (
+                  <a
+                    href={w.proofMessageUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-ghost-gm !px-3 !py-1 text-xs"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" /> View
+                  </a>
+                )}
+              </div>
             </div>
           ))}
         </div>
