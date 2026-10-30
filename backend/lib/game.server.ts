@@ -277,7 +277,7 @@ export async function claimReferral(initData: string, friendId: number) {
 export async function withdraw(initData: string, milli: number, address: string) {
   const tg = await auth(initData);
   if (!Number.isInteger(milli) || milli < MIN_WITHDRAW_MILLI) {
-    throw new Error("Minimum withdraw is $0.10");
+    throw new Error("Minimum withdraw is $0.03");
   }
 
   let friendly: string;
