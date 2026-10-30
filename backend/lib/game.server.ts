@@ -27,7 +27,7 @@ function utcDate() {
 async function ensurePlayer(tg: TgUser) {
   // A single conditional UPSERT keeps returning-player loads lightweight:
   // unchanged profiles do not generate a database write.
-  const ref = /^ref_(\d{1,20})$/.exec(tg.start_param ?? "")?.[1];
+  const ref = /^ref_(\\d{1,20})$/.exec(tg.start_param ?? "")?.[1];
   const parsedRefId = ref ? Number(ref) : null;
   const refId = parsedRefId && Number.isSafeInteger(parsedRefId) && parsedRefId !== tg.id
     ? parsedRefId
@@ -36,7 +36,7 @@ async function ensurePlayer(tg: TgUser) {
   const photoUrl = tg.photo_url ?? null;
 
   await getDb().execute({
-    sql: \`INSERT INTO players
+    sql: `INSERT INTO players
       (tg_id, first_name, username, photo_url, referred_by, created_at)
       VALUES (?, ?, ?, ?, CASE
         WHEN ? IS NOT NULL AND EXISTS (SELECT 1 FROM players WHERE tg_id = ?) THEN ?
@@ -48,7 +48,7 @@ async function ensurePlayer(tg: TgUser) {
         photo_url = excluded.photo_url
       WHERE players.first_name IS NOT excluded.first_name
         OR players.username IS NOT excluded.username
-        OR players.photo_url IS NOT excluded.photo_url\`,
+        OR players.photo_url IS NOT excluded.photo_url`,
     args: [
       tg.id,
       tg.first_name,
