@@ -1,6 +1,5 @@
 // Rewarded AdsGram ad with server-side verification + shared 3-minute cooldown (ported from the original app).
 import { useEffect, useRef, useState } from "react";
-import { useServerFn } from "@tanstack/react-start";
 import { adStatus, cancelAd, markAdStarted, startAd } from "./game.functions";
 import { ADSGRAM_BLOCK_ID } from "./rules";
 import { useGame, useGameClock } from "./game";
@@ -94,10 +93,10 @@ function playbackError(e: unknown) {
 
 export function useRewardedAd() {
   const game = useGame();
-  const start = useServerFn(startAd);
-  const started = useServerFn(markAdStarted);
-  const cancel = useServerFn(cancelAd);
-  const status = useServerFn(adStatus);
+  const start = startAd;
+  const started = markAdStarted;
+  const cancel = cancelAd;
+  const status = adStatus;
   const [loading, setLoading] = useState(false);
   const now = useGameClock();
   const ctrl = useRef<AdController | undefined>(undefined);
