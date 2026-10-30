@@ -152,14 +152,16 @@ export function useRewardedAd() {
           throw new Error(playbackError(e));
         }
       }
-      for (let i = 0; i < 45; i++) {
+      // Poll less frequently while preserving the same ~90-second verification window.
+      // This cuts the maximum status calls from 45 to 18 per completed ad.
+      for (let i = 0; i < 18; i++) {
         const st = await status({ data: { initData, sessionId: s.sessionId } });
         if (st.verified && st.state) {
           game.setState(st.state);
           return;
         }
         if (st.expired) throw new Error("Ad verification expired. Please try again.");
-        await new Promise((r) => setTimeout(r, 2000));
+        await new Promise((r) => setTimeout(r, 5000));
       }
       throw new Error("Still waiting for ad confirmation. Tap Watch Ad again to check.");
     } finally {
