@@ -7,7 +7,10 @@ type TgWebApp = {
   setHeaderColor?: (c: string) => void;
   setBackgroundColor?: (c: string) => void;
   openTelegramLink?: (url: string) => void;
-  HapticFeedback?: { impactOccurred: (s: "light" | "medium" | "heavy") => void; notificationOccurred: (t: "success" | "error") => void };
+  HapticFeedback?: {
+    impactOccurred: (s: "light" | "medium" | "heavy") => void | Promise<void>;
+    notificationOccurred: (t: "success" | "error") => void | Promise<void>;
+  };
 };
 
 export function tgApp(): TgWebApp | undefined {
@@ -18,6 +21,14 @@ export function tgApp(): TgWebApp | undefined {
 export const haptic = (t: "success" | "error" | "light" = "light") => {
   const h = tgApp()?.HapticFeedback;
   if (!h) return;
-  if (t === "light") h.impactOccurred("light");
-  else h.notificationOccurred(t);
+
+  // Haptic feedback is optional and is not supported by every Telegram client.
+  // Ignore synchronous and asynchronous WebView middleware failures so they
+  // never create an unhandled rejection or hide the original ad error.
+  try {
+    const result = t === "light" ? h.impactOccurred("light") : h.notificationOccurred(t);
+    void Promise.resolve(result).catch(() => undefined);
+  } catch {
+    // Unsupported haptic feedback must not affect the game flow.
+  }
 };
