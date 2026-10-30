@@ -123,7 +123,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     const update = await readJson(req) as { message?: { text?: string; chat?: { id?: number } } };
     const message = update.message;
     const chatId = message?.chat?.id;
-    if (typeof chatId === "number" && Number.isSafeInteger(chatId) && typeof message?.text === "string" && /^\\/start(?:@\\w+)?(?:\\s|$)/i.test(message.text)) {
+    if (typeof chatId === "number" && Number.isSafeInteger(chatId) && typeof message?.text === "string" && /^\/start(?:@\w+)?(?:\s|$)/i.test(message.text)) {
       await sendStartWelcome(chatId);
     }
     json(res, 200, { ok: true });
