@@ -3,10 +3,38 @@
 ## Folder layout
 
 - `frontend/`: UI, browser code, React components, pages, TanStack routes, SSR, Vercel config.
-- `backend/`: JSON API, game logic, database access, Telegram Bot API, TON payout logic, Supabase migration/schema.
-- Root: Render backend runtime package, Render Blueprint and shared ignore rules.
+- `backend/`: JSON API, game logic, Turso database access, Telegram Bot API, TON payout logic.
+- `backend/turso/schema.sql`: Turso/libSQL schema.
+- `scripts/migrate-supabase-to-turso.mjs`: one-time data copy from the existing Supabase PostgreSQL database.
+- Root: Render backend runtime package and Render Blueprint.
 
-There is no Lovable plugin, SDK, gateway, analytics, auth broker, or build config in this deployment. Telegram is called directly with your own BotFather token.
+The runtime no longer uses Supabase. Telegram is called directly with your own BotFather token.
+
+## Turso database setup
+
+1. Create a Turso database in the Turso dashboard (choose a region close to Render's Singapore region when practical).
+2. In the Turso database details, copy the database URL. It should start with `libsql://`.
+3. Create a database auth token and copy it once.
+4. Add both values to Render > gramminer-backend > Environment:
+   - `TURSO_DATABASE_URL`
+   - `TURSO_AUTH_TOKEN`
+5. The backend creates the required tables and indexes automatically at startup. Do not expose either value to the frontend.
+
+## Move existing Supabase data before cutover
+
+Keep the original Supabase project and its data until Turso has been verified. Do not delete or pause Supabase before the final validation.
+
+1. Take a backup/export of the Supabase database.
+2. Temporarily stop game writes (maintenance window) so the six source tables do not change while copying.
+3. On a trusted local computer, use Node.js 22.18+ and install the root dependencies with `npm install`.
+4. Set these two variables locally only:
+   - `SUPABASE_DB_URL`: direct PostgreSQL connection string for the current Supabase database (the connection string must allow PostgreSQL connections).
+   - `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`: the destination Turso credentials.
+5. Run `npm run migrate:supabase-to-turso` from the repository root.
+6. Check the reported row counts and verify balances, miners, referrals, ad sessions, withdrawals, payout batches and locks in Turso before switching production.
+7. Set the Turso variables in Render and deploy. Keep the Supabase backup and credentials securely until the new app has passed end-to-end checks.
+
+The importer uses parameterized writes and `INSERT OR IGNORE` primary-key handling so it can be safely re-run after an interrupted first import. It does not delete source data. Do not use it as a continuous two-way sync. Freeze source writes during the copy to get a consistent snapshot.
 
 ## Render backend
 
@@ -16,14 +44,12 @@ Keep Root Directory blank (repository root).
 - Start Command: `npm run start:api`
 - Health Check Path: `/health`
 
-Set the backend variables in Render > gramminer-backend > Environment.
-
 ### Required backend variables
 
-- `SUPABASE_URL`: Supabase project URL.
-- `SUPABASE_SERVICE_ROLE_KEY`: Supabase service-role key, or the newer `sb_secret_...` key. Backend-only.
-- `TELEGRAM_BOT_TOKEN`: your bot token from @BotFather. There is no LOVABLE_API_KEY or TELEGRAM_API_KEY.
-- `ADSGRAM_REWARD_SECRET`: randomly generated secret used to authenticate the AdsGram reward callback.
+- `TURSO_DATABASE_URL`: Turso database URL.
+- `TURSO_AUTH_TOKEN`: Turso database auth token. Backend-only.
+- `TELEGRAM_BOT_TOKEN`: your bot token from @BotFather.
+- `ADSGRAM_REWARD_SECRET`: random secret used to authenticate the AdsGram reward callback.
 - `PAYOUT_CRON_SECRET`: a different random secret used to authenticate the payout callback.
 - `TON_WALLET_MNEMONIC`: mnemonic for the dedicated TON payout wallet. Very sensitive.
 - `FRONTEND_URL`: `https://gramminer-himu6.vercel.app`.
@@ -38,37 +64,25 @@ Set the backend variables in Render > gramminer-backend > Environment.
 
 ## Vercel frontend
 
-Set the Vercel project's Root Directory to `frontend`. The Vercel server-side environment variable is:
+Set the Vercel project's Root Directory to `frontend`. The server-side environment variable is:
 
 - `BACKEND_URL=https://gramminer-backend.onrender.com`
 
-Do not prefix this with `VITE_`; it is only used by server functions and must not enter browser JavaScript.
+Do not prefix this with `VITE_`; it must not enter browser JavaScript. No database credentials belong in Vercel.
 
 ## Telegram bot setup
 
-1. Open [@BotFather](https://t.me/BotFather) in Telegram.
-2. Send `/newbot` and follow its prompts, or use `/mybots` to choose the existing Gram Miner bot.
-3. Open the bot's API Token menu and copy the token.
-4. Add the token as Render's `TELEGRAM_BOT_TOKEN`. Do not paste it in chat, GitHub, Vercel, or any frontend variable.
-5. In BotFather configure the bot's Main Mini App or Menu Button URL to `https://gramminer-himu6.vercel.app`.
-6. If posting payment proofs, add the bot to the proof channel as an administrator with permission to send messages.
+1. Open [@BotFather](https://t.me/BotFather).
+2. Use `/mybots` to choose the existing Gram Miner bot.
+3. Copy its API token and add it to Render as `TELEGRAM_BOT_TOKEN`. Never paste it in chat or commit it to GitHub.
+4. Configure the bot's Main Mini App or Menu Button URL to `https://gramminer-himu6.vercel.app`.
+5. If posting payment proofs, add the bot to the proof channel as an administrator with permission to send messages.
 
-The backend uses the official Telegram Bot API directly for `getMe` and `sendMessage`, and validates Telegram Mini App `initData` with the bot-token HMAC-SHA-256 algorithm.
-
-## Supabase credentials
-
-1. Open your existing Supabase project (the one that contains the Gram Miner tables and `gm_*` SQL functions).
-2. Copy its Project URL from the Connect dialog or Project Settings > API.
-3. Copy its server-side Secret API key (`sb_secret_...`) or legacy service_role key from Settings > API Keys.
-4. Set them in Render as `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
-
-Do not use a publishable/anon key in the backend variable. Never expose a secret/service-role key in the frontend. Do not create a new database: keep the project that contains the existing game data.
+The backend uses the official Telegram Bot API and validates Telegram Mini App `initData` with bot-token HMAC-SHA-256.
 
 ## Generate callback secrets
 
-Generate two independent random values (one for AdsGram and one for payout cron). For example run `openssl rand -hex 32` twice on your own computer. Do not reuse the same value for both variables.
-
-Set the AdsGram secret in Render as `ADSGRAM_REWARD_SECRET`, and configure the same value in the AdsGram callback URL. Set the second value as `PAYOUT_CRON_SECRET`, and configure the payout scheduler URL to use it.
+Generate two independent random values (one for AdsGram and one for payout cron). For example, run `openssl rand -hex 32` twice on your own computer. Do not reuse a value.
 
 AdsGram callback URL:
 `https://gramminer-himu6.vercel.app/api/public/adsgram/reward?key=YOUR_ADSGRAM_REWARD_SECRET&userid=[userId]`
@@ -76,20 +90,12 @@ AdsGram callback URL:
 Payout callback URL:
 `https://gramminer-himu6.vercel.app/api/public/payout?key=YOUR_PAYOUT_CRON_SECRET`
 
-AdsGram documents the Telegram user-ID placeholder as `[userId]`; keep this exact placeholder in the Reward URL.
+Keep the AdsGram `[userId]` placeholder exactly as shown.
 
 ## TON payout wallet
 
-Create a dedicated wallet for payouts; do not use your personal wallet's recovery phrase. Export its mnemonic securely and store it only in Render as `TON_WALLET_MNEMONIC`. Fund the derived wallet address with the amount needed for testing and network fees. Never send the mnemonic through chat or commit it to GitHub. Start on testnet or with tiny mainnet test amounts and confirm the derived address is the wallet you intended before enabling payouts.
-
-## Toncenter API key
-
-Optional: message [@toncenter](https://t.me/toncenter), open Manage API Keys, and create a key. Add it to Render as `TONCENTER_API_KEY`. The app can call the public API without this key but may be rate limited.
-
-## Local-only variables
-
-`SUPABASE_DB_URL` is only needed if you later run database migrations from a trusted local computer. It is not required by the production app at runtime.
+Use a dedicated payout wallet, not your personal wallet. Store its mnemonic only in Render as `TON_WALLET_MNEMONIC`. Start on testnet or with tiny amounts, and verify the derived wallet address before enabling payouts. Never send the mnemonic through chat or commit it to GitHub.
 
 ## Security notes
 
-Never commit real `.env` files, bot tokens, Supabase secret keys, callback secrets, or wallet recovery phrases. Keep all secrets in Render, except `BACKEND_URL` which belongs in Vercel server-side Environment Variables.
+Never commit real `.env` files, Turso auth tokens, PostgreSQL passwords, Telegram bot tokens, callback secrets, or wallet recovery phrases. Keep secrets in Render; only `BACKEND_URL` belongs in Vercel.

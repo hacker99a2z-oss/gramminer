@@ -1,10 +1,8 @@
-// Auto payout queue (same design as the original app): withdrawals are saved as "pending",
-// one worker at a time sends many payouts in ONE wallet transaction, confirmed by wallet seqno.
-// When a batch is confirmed, each payout is posted to the payment-proof Telegram channel.
+// Auto payout queue: withdrawals are sent in wallet batches and confirmed by seqno.
 import { Address, beginCell, external, internal, SendMode, storeMessage } from "@ton/core";
 import { WalletContractV4, WalletContractV5R1 } from "@ton/ton";
 import { mnemonicToPrivateKey } from "@ton/crypto";
-import { supabaseAdmin } from "../integrations/supabase/client.server.ts";
+import { getDb, withWriteTransaction, asRow, asNumber, asText } from "./db.server.ts";
 import { botApi } from "./tg.server.ts";
 
 const TONCENTER = "https://toncenter.com/api/v2";
@@ -18,18 +16,22 @@ const headers = (): Record<string, string> => {
 
 export async function getTonUsd(): Promise<number> {
   try {
-    const r = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd");
-    if (r.ok) {
-      const j = (await r.json()) as { "the-open-network"?: { usd?: number } };
-      const p = j["the-open-network"]?.usd;
-      if (p && p > 0) return p;
+    const response = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd");
+    if (response.ok) {
+      const payload = (await response.json()) as { "the-open-network"?: { usd?: number } };
+      const price = payload["the-open-network"]?.usd;
+      if (price && price > 0) return price;
     }
-  } catch { /* fall through */ }
-  const r2 = await fetch("https://tonapi.io/v2/rates?tokens=ton&currencies=usd");
-  const j2 = (await r2.json()) as { rates?: { TON?: { prices?: { USD?: number } } } };
-  const p2 = j2.rates?.TON?.prices?.USD;
-  if (!p2) throw new Error("Price unavailable, try again");
-  return p2;
+  } catch {
+    // Try the fallback provider below.
+  }
+
+  const response = await fetch("https://tonapi.io/v2/rates?tokens=ton&currencies=usd");
+  if (!response.ok) throw new Error("Price unavailable, try again");
+  const payload = (await response.json()) as { rates?: { TON?: { prices?: { USD?: number } } } };
+  const price = payload.rates?.TON?.prices?.USD;
+  if (!price || price <= 0) throw new Error("Price unavailable, try again");
+  return price;
 }
 
 async function wallet() {
@@ -44,23 +46,23 @@ async function wallet() {
 }
 
 async function tc<T>(path: string, init?: RequestInit): Promise<T> {
-  for (let i = 0; i < 3; i++) {
-    const r = await fetch(TONCENTER + path, { ...init, headers: headers() });
-    const j = (await r.json().catch(() => ({}))) as { ok?: boolean; result?: T; error?: string };
-    if (r.ok && j.ok) return j.result as T;
-    await new Promise((res) => setTimeout(res, 1200 * (i + 1)));
-    if (i === 2) throw new Error(j.error ?? "toncenter " + r.status);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const response = await fetch(TONCENTER + path, { ...init, headers: headers() });
+    const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; result?: T; error?: string };
+    if (response.ok && payload.ok) return payload.result as T;
+    await new Promise((resolve) => setTimeout(resolve, 1200 * (attempt + 1)));
+    if (attempt === 2) throw new Error(payload.error ?? "toncenter " + response.status);
   }
   throw new Error("toncenter failed");
 }
 
 async function getSeqno(address: string): Promise<number> {
-  const res = await tc<{ exit_code: number; stack: [string, string][] }>("/runGetMethod", {
+  const result = await tc<{ exit_code: number; stack: [string, string][] }>("/runGetMethod", {
     method: "POST",
     body: JSON.stringify({ address, method: "seqno", stack: [] }),
   });
-  if (res.exit_code !== 0 || !res.stack?.[0]) return 0;
-  return parseInt(res.stack[0][1], 16);
+  if (result.exit_code !== 0 || !result.stack?.[0]) return 0;
+  return parseInt(result.stack[0][1], 16);
 }
 
 async function getBalance(address: string): Promise<bigint> {
@@ -68,106 +70,201 @@ async function getBalance(address: string): Promise<bigint> {
 }
 
 async function acquireLock(): Promise<boolean> {
+  const now = new Date().toISOString();
   const until = new Date(Date.now() + LOCK_MS).toISOString();
-  await supabaseAdmin.from("locks").upsert({ id: "payout", until: new Date(0).toISOString() }, { onConflict: "id", ignoreDuplicates: true });
-  const { data } = await supabaseAdmin.from("locks").update({ until }).eq("id", "payout").lt("until", new Date().toISOString()).select("id");
-  return !!data?.length;
+  await getDb().execute({
+    sql: "INSERT INTO locks(id, until) VALUES ('payout', ?) ON CONFLICT(id) DO NOTHING",
+    args: [new Date(0).toISOString()],
+  });
+  const result = await getDb().execute({
+    sql: "UPDATE locks SET until = ? WHERE id = 'payout' AND until < ?",
+    args: [until, now],
+  });
+  return result.rowsAffected > 0;
 }
-const releaseLock = () => supabaseAdmin.from("locks").update({ until: new Date(0).toISOString() }).eq("id", "payout");
+
+async function releaseLock() {
+  await getDb().execute({
+    sql: "UPDATE locks SET until = ? WHERE id = 'payout'",
+    args: [new Date(0).toISOString()],
+  });
+}
+
+function parseIds(value: unknown): string[] {
+  try {
+    const parsed = JSON.parse(asText(value)) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
+}
 
 async function postProofs(ids: string[]) {
   const chat = process.env["PAYMENT_PROOF_CHAT_ID"];
   if (!chat || !ids.length) return;
-  const { data: rows } = await supabaseAdmin.from("withdrawals").select("*").in("id", ids).eq("proof_posted", false);
-  for (const w of rows ?? []) {
-    const { data: p } = await supabaseAdmin.from("players").select("first_name, username").eq("tg_id", w.tg_id).maybeSingle();
-    const ton = (Number(BigInt(w.nano)) / 1e9).toFixed(4);
-    const addr = w.address.slice(0, 6) + "…" + w.address.slice(-6);
-    const name = (p?.first_name ?? "Miner").replace(/[<>&]/g, "");
-    const text =
+
+  const placeholders = ids.map(() => "?").join(", ");
+  const result = await getDb().execute({
+    sql: "SELECT * FROM withdrawals WHERE id IN (" + placeholders + ") AND proof_posted = 0",
+    args: ids,
+  });
+
+  for (const value of result.rows) {
+    const withdrawal = asRow(value);
+    const playerResult = await getDb().execute({
+      sql: "SELECT first_name, username FROM players WHERE tg_id = ?",
+      args: [asNumber(withRow(withdrawal, "tg_id"))],
+    });
+    const player = playerResult.rows[0] ? asRow(playerResult.rows[0]) : {};
+    const ton = (Number(BigInt(asText(withdrawal["nano"]))) / 1e9).toFixed(4);
+    const address = asText(withdrawal["address"]);
+    const shortAddress = address.slice(0, 6) + "…" + address.slice(-6);
+    const name = asText(player["first_name"] || "Miner").replace(/[<>&]/g, "");
+    const username = player["username"] ? " (@" + asText(player["username"]) + ")" : "";
+    const message =
       "✅ <b>New Withdrawal Paid</b>\n\n" +
-      "👤 User: <b>" + name + "</b>" + (p?.username ? " (@" + p.username + ")" : "") + "\n" +
-      "🆔 ID: <code>" + w.tg_id + "</code>\n" +
-      "💵 Amount: <b>$" + (w.amount_milli / 1000).toFixed(3) + "</b> (" + ton + " TON)\n" +
-      "👛 Wallet: <code>" + addr + "</code>\n" +
-      "🔗 <a href=\"https://tonviewer.com/" + w.address + "\">View on Tonviewer</a>\n\n" +
+      "👤 User: <b>" + name + "</b>" + username + "\n" +
+      "🆔 ID: <code>" + asText(withdrawal["tg_id"]) + "</code>\n" +
+      "💵 Amount: <b>$" + (asNumber(withdrawal["amount_milli"]) / 1000).toFixed(3) + "</b> (" + ton + " TON)\n" +
+      "👛 Wallet: <code>" + shortAddress + "</code>\n" +
+      "🔗 <a href=\"https://tonviewer.com/" + address + "\">View on Tonviewer</a>\n\n" +
       "⛏ Gram Miner — auto withdrawal";
+
     try {
-      await botApi("sendMessage", { chat_id: chat, text, parse_mode: "HTML", disable_web_page_preview: true });
-      await supabaseAdmin.from("withdrawals").update({ proof_posted: true }).eq("id", w.id);
-    } catch (e) {
-      console.error("proof post failed", e);
+      await botApi("sendMessage", {
+        chat_id: chat,
+        text: message,
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      });
+      await getDb().execute({
+        sql: "UPDATE withdrawals SET proof_posted = 1 WHERE id = ?",
+        args: [asText(withdrawal["id"])],
+      });
+    } catch (error) {
+      console.error("proof post failed", error);
     }
   }
 }
 
-/** One payout pass: confirm in-flight batches, then send one new batch (no long waits). */
+function withRow(row: Record<string, unknown>, key: string) {
+  return row[key];
+}
+
+/** One payout pass: confirm any in-flight batches, then send at most one new batch. */
 export async function runPayouts(): Promise<{ sent: number; note?: string }> {
   if (!process.env["TON_WALLET_MNEMONIC"]) return { sent: 0, note: "not configured" };
   if (!(await acquireLock())) return { sent: 0, note: "locked" };
+
   try {
     const { contract, secretKey, max } = await wallet();
     const address = contract.address.toString({ bounceable: false });
-    const { data: open } = await supabaseAdmin.from("payout_batches").select("*").eq("status", "sending");
+    const openResult = await getDb().execute("SELECT * FROM payout_batches WHERE status = 'sending'");
     let sent = 0;
-    if (open?.length) {
+
+    if (openResult.rows.length) {
       const seqno = await getSeqno(address);
-      for (const b of open) {
-        if (seqno > b.seqno) {
-          await supabaseAdmin.from("withdrawals").update({ status: "sent", sent_at: new Date().toISOString() }).in("id", b.ids).eq("status", "sending");
-          await supabaseAdmin.from("payout_batches").update({ status: "done" }).eq("id", b.id);
-          await postProofs(b.ids);
-          sent += b.ids.length;
-        } else if (Date.now() - new Date(b.sent_at).getTime() > RETRY_AFTER_MS) {
-          await supabaseAdmin.from("withdrawals").update({ status: "pending", batch_id: null }).in("id", b.ids).eq("status", "sending");
-          await supabaseAdmin.from("payout_batches").update({ status: "done" }).eq("id", b.id);
+      for (const value of openResult.rows) {
+        const batch = asRow(value);
+        const ids = parseIds(batch["ids"]);
+        if (seqno > asNumber(batch["seqno"])) {
+          await withWriteTransaction(async (tx) => {
+            if (ids.length) {
+              const slots = ids.map(() => "?").join(", ");
+              await tx.execute({
+                sql: "UPDATE withdrawals SET status = 'sent', sent_at = ? WHERE id IN (" + slots + ") AND status = 'sending'",
+                args: [new Date().toISOString(), ...ids],
+              });
+            }
+            await tx.execute({
+              sql: "UPDATE payout_batches SET status = 'done' WHERE id = ?",
+              args: [asText(batch["id"])],
+            });
+          });
+          await postProofs(ids);
+          sent += ids.length;
+        } else if (Date.now() - new Date(asText(batch["sent_at"])).getTime() > RETRY_AFTER_MS) {
+          await withWriteTransaction(async (tx) => {
+            if (ids.length) {
+              const slots = ids.map(() => "?").join(", ");
+              await tx.execute({
+                sql: "UPDATE withdrawals SET status = 'pending', batch_id = NULL WHERE id IN (" + slots + ") AND status = 'sending'",
+                args: ids,
+              });
+            }
+            await tx.execute({
+              sql: "UPDATE payout_batches SET status = 'done' WHERE id = ?",
+              args: [asText(batch["id"])],
+            });
+          });
         } else {
           return { sent, note: "waiting for previous batch" };
         }
       }
     }
 
-    const { data: list } = await supabaseAdmin.from("withdrawals").select("*").eq("status", "pending").order("created_at").limit(max);
-    if (!list?.length) return { sent };
+    const pendingResult = await getDb().execute({
+      sql: "SELECT * FROM withdrawals WHERE status = 'pending' ORDER BY created_at LIMIT ?",
+      args: [max],
+    });
+    if (!pendingResult.rows.length) return { sent };
+
     const balance = await getBalance(address);
     const reserve = 50_000_000n;
-    const take: typeof list = [];
+    const selected: Record<string, unknown>[] = [];
     let total = 0n;
-    for (const w of list) {
-      const n = BigInt(w.nano);
-      if (balance < total + n + reserve + 10_000_000n * BigInt(take.length + 1)) break;
-      take.push(w);
-      total += n;
+    for (const value of pendingResult.rows) {
+      const withdrawal = asRow(value);
+      const amount = BigInt(asText(withdrawal["nano"]));
+      if (balance < total + amount + reserve + 10_000_000n * BigInt(selected.length + 1)) break;
+      selected.push(withdrawal);
+      total += amount;
     }
-    if (!take.length) return { sent, note: "payout wallet low on funds" };
+    if (!selected.length) return { sent, note: "payout wallet low on funds" };
 
     const seqno = await getSeqno(address);
     const batchId = crypto.randomUUID();
-    const ids = take.map((w) => w.id);
-    await supabaseAdmin.from("payout_batches").insert({ id: batchId, seqno, ids });
-    await supabaseAdmin.from("withdrawals").update({ status: "sending", batch_id: batchId }).in("id", ids).eq("status", "pending");
+    const ids = selected.map((row) => asText(row["id"]));
+    await withWriteTransaction(async (tx) => {
+      await tx.execute({
+        sql: "INSERT INTO payout_batches(id, seqno, ids, sent_at, status) VALUES (?, ?, ?, ?, 'sending')",
+        args: [batchId, seqno, JSON.stringify(ids), new Date().toISOString()],
+      });
+      const slots = ids.map(() => "?").join(", ");
+      await tx.execute({
+        sql: "UPDATE withdrawals SET status = 'sending', batch_id = ? WHERE id IN (" + slots + ") AND status = 'pending'",
+        args: [batchId, ...ids],
+      });
+    });
 
-    const body = await (contract as unknown as { createTransfer: (a: unknown) => Promise<import("@ton/core").Cell> | import("@ton/core").Cell }).createTransfer({
+    const body = await (contract as unknown as {
+      createTransfer: (args: unknown) => Promise<import("@ton/core").Cell> | import("@ton/core").Cell;
+    }).createTransfer({
       seqno,
       secretKey,
       sendMode: SendMode.PAY_GAS_SEPARATELY + SendMode.IGNORE_ERRORS,
-      messages: take.map((w) =>
+      messages: selected.map((row) =>
         internal({
-          to: Address.parse(w.address),
-          value: BigInt(w.nano),
+          to: Address.parse(asText(row["address"])),
+          value: BigInt(asText(row["nano"])),
           bounce: false,
           body: beginCell().storeUint(0, 32).storeStringTail("Gram Miner withdraw").endCell(),
         }),
       ),
     } as never);
-    const ext = external({ to: contract.address, init: seqno === 0 ? contract.init : undefined, body });
-    const boc = beginCell().store(storeMessage(ext)).endCell().toBoc().toString("base64");
+
+    const externalMessage = external({
+      to: contract.address,
+      init: seqno === 0 ? contract.init : undefined,
+      body,
+    });
+    const boc = beginCell().store(storeMessage(externalMessage)).endCell().toBoc().toString("base64");
     await tc("/sendBoc", { method: "POST", body: JSON.stringify({ boc }) });
     return { sent, note: "batch sent, confirming" };
-  } catch (e) {
-    console.error("payout run failed", e);
-    return { sent: 0, note: e instanceof Error ? e.message : "error" };
+  } catch (error) {
+    console.error("payout run failed", error);
+    return { sent: 0, note: error instanceof Error ? error.message : "error" };
   } finally {
-    await releaseLock();
+    await releaseLock().catch((error) => console.error("payout lock release failed", error));
   }
 }
