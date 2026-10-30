@@ -2,8 +2,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import * as game from "./lib/game.server.ts";
+import { initializeDatabase } from "./lib/db.server.ts";
 import { runPayouts } from "./lib/payout.server.ts";
-import { supabaseAdmin } from "./integrations/supabase/client.server.ts";
 
 const initData = z.string().min(1).max(4096);
 const withInit = z.object({ initData });
@@ -11,14 +11,8 @@ const minerInput = z.object({ initData, minerId: z.number().int().min(1).max(5) 
 const sessionInput = z.object({ initData, sessionId: z.string().regex(/^[a-f0-9]{32}$/) });
 
 const postRoutes: Record<string, (body: unknown) => Promise<unknown>> = {
-  "/api/game/load": async (body) => {
-    const data = withInit.parse(body);
-    return game.load(data.initData);
-  },
-  "/api/game/claim-bonus": async (body) => {
-    const data = withInit.parse(body);
-    return game.rpc(data.initData, "gm_claim_bonus");
-  },
+  "/api/game/load": async (body) => game.load(withInit.parse(body).initData),
+  "/api/game/claim-bonus": async (body) => game.claimBonus(withInit.parse(body).initData),
   "/api/game/buy-miner": async (body) => {
     const data = minerInput.parse(body);
     return game.buyMiner(data.initData, data.minerId);
@@ -27,14 +21,8 @@ const postRoutes: Record<string, (body: unknown) => Promise<unknown>> = {
     const data = minerInput.parse(body);
     return game.claimMiner(data.initData, data.minerId);
   },
-  "/api/game/donate": async (body) => {
-    const data = withInit.parse(body);
-    return game.rpc(data.initData, "gm_donate");
-  },
-  "/api/game/referrals": async (body) => {
-    const data = withInit.parse(body);
-    return game.referrals(data.initData);
-  },
+  "/api/game/donate": async (body) => game.donate(withInit.parse(body).initData),
+  "/api/game/referrals": async (body) => game.referrals(withInit.parse(body).initData),
   "/api/game/claim-referral": async (body) => {
     const data = z.object({ initData, friendId: z.number().int().positive() }).parse(body);
     return game.claimReferral(data.initData, data.friendId);
@@ -105,8 +93,6 @@ function applyCors(req: IncomingMessage, res: ServerResponse, path: string) {
   const origin = req.headers.origin;
   if (!origin) return;
 
-  // These callbacks are reached through the public Vercel URL and may also be
-  // called by AdsGram/cron providers directly.
   if (path.startsWith("/api/public/")) {
     res.setHeader("access-control-allow-origin", "*");
   } else if (allowedOrigins.has(origin.replace(/\/+$/, ""))) {
@@ -128,7 +114,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   }
 
   if (req.method === "GET" && url.pathname === "/health") {
-    json(res, 200, { ok: true });
+    json(res, 200, { ok: true, database: "turso" });
     return;
   }
 
@@ -155,14 +141,14 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       text(res, 400, "Invalid userid");
       return;
     }
-    const { data, error } = await supabaseAdmin.rpc("gm_ad_reward", { _tg: Number(userId) });
-    if (error) {
+    try {
+      const result = await game.rewardAd(Number(userId));
+      const statuses: Record<string, number> = { ok: 200, already: 200, no_session: 404, expired: 410, cooldown: 429 };
+      text(res, statuses[result] ?? 400, result);
+    } catch (error) {
       console.error("[adsgram] reward failed", error);
       text(res, 500, "Try again");
-      return;
     }
-    const statuses: Record<string, number> = { ok: 200, already: 200, no_session: 404, expired: 410, cooldown: 429 };
-    text(res, statuses[String(data)] ?? 400, String(data));
     return;
   }
 
@@ -170,7 +156,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     const secret = process.env["PAYOUT_CRON_SECRET"];
     const key = url.searchParams.get("key");
     if (!secret || key !== secret) {
-      text(res, 200, "ok");
+      text(res, 403, "Forbidden");
       return;
     }
     json(res, 200, await runPayouts());
@@ -202,6 +188,13 @@ const server = createServer((req, res) => {
   });
 });
 
-server.listen(port, "0.0.0.0", () => {
-  console.log("Gram Miner backend listening on port " + port);
-});
+initializeDatabase()
+  .then(() => {
+    server.listen(port, "0.0.0.0", () => {
+      console.log("Gram Miner backend connected to Turso and listening on port " + port);
+    });
+  })
+  .catch((error) => {
+    console.error("Turso database initialization failed; refusing to start:", error);
+    process.exitCode = 1;
+  });
