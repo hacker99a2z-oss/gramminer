@@ -213,7 +213,7 @@ export async function sendStartWelcome(chatId: number): Promise<void> {
     "💎 কমপক্ষে <b>$0.03</b> balance হলে connected TON wallet-এ withdrawal request দিতে পারো।",
     "📊 History থেকে withdrawal-এর pending ও sent status দেখতে পারবে।",
     "📢 আপডেট ও community help পেতে নিচের Official Channel এবং Supported Group-এ যুক্ত হও।",
-  ].join("\\n\\n");
+  ].join("\n\n");
 
   const inlineKeyboard: Array<Array<Record<string, unknown>>> = [
     [{ text: "🚀 Open App", web_app: { url: appUrl } }],
