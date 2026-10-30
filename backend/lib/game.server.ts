@@ -310,6 +310,10 @@ export async function withdraw(initData: string, milli: number, address: string)
 
 export async function withdrawalStatus(initData: string) {
   const tg = await auth(initData);
+  const open = await getDb().execute(
+    "SELECT COUNT(*) AS count FROM withdrawals WHERE status IN ('pending', 'sending')",
+  );
+  if (asNumber(asRow(open.rows[0])["count"]) > 0) await runPayouts();
   return snapshot(tg.id);
 }
 
