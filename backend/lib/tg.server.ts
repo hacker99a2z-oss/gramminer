@@ -173,7 +173,7 @@ export async function configureTelegramWebhook(): Promise<void> {
 }
 
 const WELCOME_VIDEO_URL =
-  "https://raw.githubusercontent.com/hacker99a2z-oss/gramminer/main/backend/lib/assets/gramminer-welcome.mp4";
+  "https://cdn.jsdelivr.net/gh/hacker99a2z-oss/gramminer@main/backend/lib/assets/gramminer-welcome.mp4";
 
 /**
  * Telegram can execute a Bot API method from the webhook HTTP response.
