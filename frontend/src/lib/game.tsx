@@ -19,7 +19,7 @@ type Ctx = {
 const GameCtx = createContext<Ctx | null>(null);
 const GameClockCtx = createContext<number | null>(null);
 
-function GameClockProvider({ children }: { children: ReactNode }) {
+function GameClockProvider({ children, serverOffset }: { children: ReactNode; serverOffset: number }) {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -37,7 +37,7 @@ function GameClockProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  return <GameClockCtx.Provider value={now}>{children}</GameClockCtx.Provider>;
+  return <GameClockCtx.Provider value={now + serverOffset}>{children}</GameClockCtx.Provider>;
 }
 
 export function GameProvider({ children }: { children: ReactNode }) {
@@ -45,7 +45,13 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const [initData, setInitData] = useState<string | null>(null);
   const [user, setUser] = useState<GameUser>({ id: null, name: "Miner" });
   const [state, setState] = useState<Snapshot | null>(null);
+  const [serverOffset, setServerOffset] = useState(0);
   const [error, setError] = useState<string | null>(null);
+
+  const updateState = useCallback((next: Snapshot) => {
+    setState(next);
+    setServerOffset(next.serverNow - Date.now());
+  }, []);
   const [botUsername, setBot] = useState<string | null>(null);
   const [proofUrl, setProof] = useState<string | null>(null);
 
@@ -54,14 +60,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
     if (!data) return;
     try {
       const r = await loadGame({ data: { initData: data } });
-      setState(r.state);
+      updateState(r.state);
       setBot(r.botUsername);
       setProof(r.proofUrl);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not load");
     }
-  }, []);
+  }, [updateState]);
 
   useEffect(() => {
     let tries = 0;
@@ -115,8 +121,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
   }, [hasOpenWithdrawals, initData]);
 
   return (
-    <GameCtx.Provider value={{ ready, initData, user, state, setState, error, botUsername, proofUrl, refresh }}>
-      <GameClockProvider>{children}</GameClockProvider>
+    <GameCtx.Provider value={{ ready, initData, user, state, setState: updateState, error, botUsername, proofUrl, refresh }}>
+      <GameClockProvider serverOffset={serverOffset}>{children}</GameClockProvider>
     </GameCtx.Provider>
   );
 }
