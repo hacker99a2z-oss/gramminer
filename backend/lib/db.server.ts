@@ -1,4 +1,4 @@
-import { createClient, type Client } from "@libsql/client";
+import { createClient, type Client } from "@libsql/client/web";
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
