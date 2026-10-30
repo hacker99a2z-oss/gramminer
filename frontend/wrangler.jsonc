@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "gramminer-frontend",
-  "main": "src/server.ts",
+  "main": "@tanstack/react-start/server-entry",
   "compatibility_date": "2026-10-30",
   "compatibility_flags": ["nodejs_compat"],
   "observability": {
