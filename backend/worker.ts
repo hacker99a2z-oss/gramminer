@@ -113,7 +113,8 @@ async function handle(request: Request): Promise<Response> {
       await getDb().execute("SELECT 1");
       return json(request, path, 200, { ok: true, database: "connected" });
     } catch (error) {
-      console.error("[ready] Turso check failed", error);
+      const reason = error instanceof Error ? error.message : "Unknown database error";
+      console.error("[ready] Turso check failed:", reason);
       return json(request, path, 503, { ok: false, database: "unavailable" });
     }
   }
