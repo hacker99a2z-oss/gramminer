@@ -31,8 +31,7 @@ child.on("error", (error) => {
   process.exitCode = 1;
 });
 child.on("exit", (code, signal) => {
-  if (signal) process.kill(process.pid, signal);
-  else process.exitCode = code ?? 1;
+  process.exitCode = code ?? 1;
 });
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
