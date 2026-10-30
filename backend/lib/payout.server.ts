@@ -136,15 +136,15 @@ async function postProofs(ids: string[]) {
       ? sentAtRaw
       : new Date(sentAtRaw).toISOString().replace("T", " ").replace(/\.\d{3}Z$/, " UTC");
     const message =
-      "✅ <b>Withdrawal sent</b>\\n\\n" +
-      "👤 User: <b>" + name + "</b>" + username + "\\n" +
-      "🆔 Telegram ID: <code>" + telegramId + "</code>\\n" +
-      "💵 USD amount: <b>$" + (asNumber(withdrawal["amount_milli"]) / 1000).toFixed(3) + "</b>\\n" +
-      "💎 TON amount: <b>" + ton + " TON</b>\\n" +
-      "👛 Wallet: <code>" + escapeHtml(address) + "</code>\\n" +
-      "🧾 Withdrawal ID: <code>" + withdrawalId + "</code>\\n" +
-      "🕒 Sent at: <code>" + escapeHtml(sentAt) + "</code>\\n" +
-      "🔗 <a href=\\"https://tonviewer.com/" + encodeURIComponent(address) + "\\">View wallet on Tonviewer</a>\\n\\n" +
+      "✅ <b>Withdrawal sent</b>\n\n" +
+      "👤 User: <b>" + name + "</b>" + username + "\n" +
+      "🆔 Telegram ID: <code>" + telegramId + "</code>\n" +
+      "💵 USD amount: <b>$" + (asNumber(withdrawal["amount_milli"]) / 1000).toFixed(3) + "</b>\n" +
+      "💎 TON amount: <b>" + ton + " TON</b>\n" +
+      "👛 Wallet: <code>" + escapeHtml(address) + "</code>\n" +
+      "🧾 Withdrawal ID: <code>" + withdrawalId + "</code>\n" +
+      "🕒 Sent at: <code>" + escapeHtml(sentAt) + "</code>\n" +
+      "🔗 <a href=\"https://tonviewer.com/" + encodeURIComponent(address) + "\">View wallet on Tonviewer</a>\n\n" +
       "⛏ Gram Miner — auto withdrawal";
 
     try {
