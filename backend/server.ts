@@ -177,6 +177,8 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     }
     try {
       const result = await game.rewardAd(Number(userId));
+      // Keep an auditable result without logging the callback key or full Telegram ID.
+      console.info(`[adsgram] server reward callback processed: ${result}`);
       const statuses: Record<string, number> = { ok: 200, already: 200, no_session: 404, expired: 410, cooldown: 429 };
       text(res, statuses[result] ?? 400, result);
     } catch (error) {
