@@ -1,9 +1,9 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import * as game from "../src/lib/game.server.ts";
-import { runPayouts } from "../src/lib/payout.server.ts";
-import { supabaseAdmin } from "../src/integrations/supabase/client.server.ts";
+import * as game from "./lib/game.server.ts";
+import { runPayouts } from "./lib/payout.server.ts";
+import { supabaseAdmin } from "./integrations/supabase/client.server.ts";
 
 const initData = z.string().min(1).max(4096);
 const withInit = z.object({ initData });
