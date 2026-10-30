@@ -79,7 +79,7 @@ export const requestWithdraw = createServerFn({ method: "POST" })
   .inputValidator((d) =>
     z.object({
       initData: init,
-      milli: z.number().int().min(100).max(1_000_000),
+      milli: z.number().int().min(30).max(1_000_000),
       address: z.string().min(40).max(80),
     }).parse(d),
   )
