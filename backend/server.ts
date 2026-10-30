@@ -27,10 +27,11 @@ const postRoutes: Record<string, (body: unknown) => Promise<unknown>> = {
     const data = z.object({ initData, friendId: z.number().int().positive() }).parse(body);
     return game.claimReferral(data.initData, data.friendId);
   },
+  "/api/game/withdrawal-status": async (body) => game.withdrawalStatus(withInit.parse(body).initData),
   "/api/game/withdraw": async (body) => {
     const data = z.object({
       initData,
-      milli: z.number().int().min(100).max(1_000_000),
+      milli: z.number().int().min(30).max(1_000_000),
       address: z.string().min(40).max(80),
     }).parse(body);
     return game.withdraw(data.initData, data.milli, data.address);

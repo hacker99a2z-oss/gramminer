@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { loadGame } from "./game.functions";
+import { getWithdrawalStatus, loadGame } from "./game.functions";
 import { tgApp } from "./telegram";
 import type { Snapshot } from "./game.types";
 
@@ -67,6 +67,30 @@ export function GameProvider({ children }: { children: ReactNode }) {
     boot();
     return () => clearTimeout(timer);
   }, [refresh]);
+
+  const hasOpenWithdrawals = Boolean(
+    state?.withdrawals.some((withdrawal) => withdrawal.status === "pending" || withdrawal.status === "sending"),
+  );
+
+  useEffect(() => {
+    if (!initData || !hasOpenWithdrawals) return;
+
+    let active = true;
+    const poll = async () => {
+      try {
+        const latest = await getWithdrawalStatus({ data: { initData } });
+        if (active) setState(latest);
+      } catch (pollError) {
+        console.error("Could not refresh withdrawal status", pollError);
+      }
+    };
+
+    const timer = setInterval(() => void poll(), 15_000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [hasOpenWithdrawals, initData]);
 
   return (
     <GameCtx.Provider value={{ ready, initData, user, state, setState, error, botUsername, proofUrl, refresh }}>

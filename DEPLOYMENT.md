@@ -62,6 +62,21 @@ Keep Root Directory blank (repository root).
 - `PAYMENT_PROOF_CHAT_ID`: channel username such as `@gramminer_payments` or a numeric chat ID.
 - `PAYMENTS_PROOF_URL`: optional public payment-proof link.
 
+### Payment proof channel and background payout schedule
+
+To publish one proof message after each payout batch is marked sent:
+
+1. Add the Telegram bot to your payment-proof channel as an administrator with permission to send messages.
+2. Set Render variable `PAYMENT_PROOF_CHAT_ID` to the channel username (for example, `@gramminer_payments`) or numeric channel ID.
+3. Set `PAYMENTS_PROOF_URL` to the channel's public link (for example, `https://t.me/gramminer_payments`) for the in-app proof link.
+4. Configure an external scheduler to call the production frontend URL below every minute. Keep the secret private.
+
+```text
+https://gramminer-nine.vercel.app/api/public/payout?key=YOUR_PAYOUT_CRON_SECRET
+```
+
+The scheduler endpoint is authenticated by `PAYOUT_CRON_SECRET`. It processes pending payouts and checks in-flight batches; when a batch is marked sent, the backend posts a per-withdrawal proof to the configured channel. The Withdraw page refreshes open withdrawal statuses every 15 seconds while it remains open. The scheduled callback is what allows payout processing and channel posting to continue when no user has the Mini App open.
+
 ## Vercel frontend
 
 Set the Vercel project's Root Directory to `frontend`. The server-side environment variable is:
