@@ -71,12 +71,12 @@ Generate two independent random values (one for AdsGram and one for payout cron)
 Set the AdsGram secret in Render as `ADSGRAM_REWARD_SECRET`, and configure the same value in the AdsGram callback URL. Set the second value as `PAYOUT_CRON_SECRET`, and configure the payout scheduler URL to use it.
 
 AdsGram callback URL:
-`https://gramminer-nine.vercel.app/api/public/adsgram/reward?key=YOUR_ADSGRAM_REWARD_SECRET&userid=USER_ID`
+`https://gramminer-nine.vercel.app/api/public/adsgram/reward?key=YOUR_ADSGRAM_REWARD_SECRET&userid=[userId]`
 
 Payout callback URL:
 `https://gramminer-nine.vercel.app/api/public/payout?key=YOUR_PAYOUT_CRON_SECRET`
 
-Check AdsGram's dashboard for its required user-ID macro name and replace `USER_ID` with that exact macro.
+AdsGram documents the Telegram user-ID placeholder as `[userId]`; keep this exact placeholder in the Reward URL.
 
 ## TON payout wallet
 
