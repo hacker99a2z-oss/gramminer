@@ -12,7 +12,7 @@ concurrency:
 jobs:
   payout:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 6
     env:
       PAYOUT_CRON_SECRET: ${{ secrets.PAYOUT_CRON_SECRET }}
     steps:
@@ -23,6 +23,6 @@ jobs:
       - name: Process pending withdrawals
         if: ${{ env.PAYOUT_CRON_SECRET != '' }}
         run: |
-          curl --fail --silent --show-error --max-time 55 \
+          curl --fail --silent --show-error --max-time 240 \
             --header "Authorization: Bearer ${PAYOUT_CRON_SECRET}" \
             https://gramminer-backend.onrender.com/api/public/payout
