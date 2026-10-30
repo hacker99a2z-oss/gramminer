@@ -13,6 +13,64 @@ type AdController = {
   destroy?: () => void;
 };
 
+type AdsgramSdk = {
+  init: (options: { blockId: string; debug?: boolean }) => AdController;
+};
+
+let adsgramControllerPromise: Promise<AdController> | undefined;
+
+function loadAdsgramController(blockId: string): Promise<AdController> {
+  const existingSdk = (window as Window & { Adsgram?: AdsgramSdk }).Adsgram;
+  if (existingSdk) return Promise.resolve(existingSdk.init({ blockId, debug: false }));
+  if (adsgramControllerPromise) return adsgramControllerPromise;
+
+  adsgramControllerPromise = new Promise<AdController>((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://sad.adsgram.ai/js/sad.min.js";
+    script.async = true;
+
+    let settled = false;
+    const timeout = window.setTimeout(() => {
+      finish(new Error("AdsGram SDK load timed out. Check your connection or ad blocker and retry."));
+    }, 15_000);
+
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      script.onload = null;
+      script.onerror = null;
+
+      if (error) {
+        script.remove();
+        reject(error);
+        return;
+      }
+
+      const sdk = (window as Window & { Adsgram?: AdsgramSdk }).Adsgram;
+      if (!sdk) {
+        script.remove();
+        reject(new Error("AdsGram SDK loaded, but its controller was unavailable. Please retry."));
+        return;
+      }
+
+      try {
+        resolve(sdk.init({ blockId, debug: false }));
+      } catch (cause) {
+        reject(cause instanceof Error ? cause : new Error("Could not initialize AdsGram."));
+      }
+    };
+
+    script.onload = () => finish();
+    script.onerror = () => finish(new Error("Could not load AdsGram. Check your connection or browser content blockers."));
+    document.head.appendChild(script);
+  }).finally(() => {
+    adsgramControllerPromise = undefined;
+  });
+
+  return adsgramControllerPromise;
+}
+
 const FAILED_KEY = "gm:adsgram:failed:";
 
 function showWithTimeout(c: AdController, onStart: () => void, ms = 30000) {
@@ -47,8 +105,17 @@ export function useRewardedAd() {
   const left = nextAdAt ? Math.max(0, nextAdAt - now) : 0;
 
   useEffect(() => {
-    const sdk = (window as unknown as { Adsgram?: { init: (o: { blockId: string; debug?: boolean }) => AdController } }).Adsgram;
-    if (sdk) ctrl.current = sdk.init({ blockId: ADSGRAM_BLOCK_ID, debug: false });
+    let active = true;
+    void loadAdsgramController(ADSGRAM_BLOCK_ID)
+      .then((controller) => {
+        if (active) ctrl.current = controller;
+      })
+      .catch((error: unknown) => {
+        console.warn("[adsgram] SDK initialization failed", error);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const secs = Math.ceil(left / 1000);
@@ -58,16 +125,18 @@ export function useRewardedAd() {
     if (loading || left) return;
     const initData = game.initData;
     if (!initData || !game.user.id) throw new Error("Open the app inside Telegram");
-    if (!ctrl.current) throw new Error("Ads are not available right now");
     setLoading(true);
     const key = FAILED_KEY + game.user.id;
     try {
+      // Wait for the SDK if Telegram Desktop/Web loads the external script more slowly.
+      const controller = ctrl.current ?? await loadAdsgramController(ADSGRAM_BLOCK_ID);
+      ctrl.current = controller;
       const failed = localStorage.getItem(key) ?? undefined;
       const s = await start({ data: { initData, abandonSessionId: failed && /^[a-f0-9]{32}$/.test(failed) ? failed : undefined } });
       if (failed) localStorage.removeItem(key);
       if (!s.resumed) {
         try {
-          const r = await showWithTimeout(ctrl.current, () => void started({ data: { initData, sessionId: s.sessionId } }).catch(() => undefined));
+          const r = await showWithTimeout(controller, () => void started({ data: { initData, sessionId: s.sessionId } }).catch(() => undefined));
           if (!r.done) throw new Error("Watch the ad till the end to get 100 coins");
         } catch (e) {
           localStorage.setItem(key, s.sessionId);
