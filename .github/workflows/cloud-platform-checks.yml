@@ -46,6 +46,6 @@ jobs:
       - name: Install frontend dependencies
         run: npm install --no-audit --no-fund
       - name: Build for Cloudflare Workers
-        run: npm run build
+        run: npm run build:cloudflare
       - name: Validate Wrangler deployment bundle
         run: npx wrangler deploy --dry-run
