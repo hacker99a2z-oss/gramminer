@@ -7,7 +7,8 @@
   },
   "scripts": {
     "start:api": "node --experimental-strip-types backend/server.ts",
-    "migrate:supabase-to-turso": "node scripts/migrate-supabase-to-turso.mjs"
+    "migrate:supabase-to-turso": "node scripts/migrate-supabase-to-turso.mjs",
+    "db:migrate": "node --experimental-strip-types backend/migrate.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",

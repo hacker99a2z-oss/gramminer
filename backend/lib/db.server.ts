@@ -100,6 +100,10 @@ export function closeDatabase(): void {
   initialization = undefined;
 }
 
+export async function verifyDatabaseConnection(): Promise<void> {
+  await getDb().execute("SELECT 1");
+}
+
 export async function initializeDatabase(): Promise<void> {
   if (initialized) return;
   if (initialization) return initialization;

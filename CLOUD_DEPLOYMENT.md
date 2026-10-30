@@ -61,7 +61,16 @@ Use Google Cloud project region **asia-southeast1 (Singapore)** for the API.
 
    Grant the Cloud Run service identity permission to access those secrets. Do not put real secret values in GitHub, Dockerfile, Wrangler config, frontend variables, or chat.
 
-6. After deployment, open `https://YOUR_CLOUD_RUN_SERVICE_URL/health`. It must return JSON `{"ok":true}`. Also confirm logs say the backend connected to Turso. The health endpoint does not modify balances or trigger payouts.
+6. Before sending production traffic to a newly deployed backend revision, run the schema migration once from the repository root using the same Turso environment and secrets configured for Cloud Run:
+
+   ```sh
+   npm install --no-audit --no-fund
+   npm run db:migrate
+   ```
+
+   Run this as a one-off release step, not from every Cloud Run instance. It applies the existing idempotent schema setup and the required withdrawal proof URL column. Do not point it at a new/empty database or change `TURSO_DATABASE_URL`; use the existing production Turso database only when intentionally applying the reviewed migration.
+
+7. After deployment, open `https://YOUR_CLOUD_RUN_SERVICE_URL/health`. It must return JSON `{"ok":true}`. Also confirm logs say the backend connected to Turso. The health endpoint does not modify balances or trigger payouts.
 
 ## 2. Deploy the frontend to Cloudflare Pages
 
@@ -108,7 +117,9 @@ Do this only after Cloud Run is healthy and the Pages frontend works.
 
 Keep the Render service online during the rollback window.
 
-## 4. Move the payout scheduler and AdsGram callback
+## 4. Durable withdrawal queue, payout scheduler and AdsGram callback
+
+A committed row in the Turso `withdrawals` table with status `pending` is the durable payout queue item. The user-facing Withdraw and Withdrawal Status API routes only read/write user state; they never execute blockchain sends. The scheduled payout endpoint is the only consumer that calls `runPayouts()`. Keep a single scheduler active. The worker uses a database lease to prevent overlapping payout passes, and the queue survives backend restarts.
 
 1. In GitHub repository Settings > Secrets and variables > Actions:
    - Keep the existing repository secret `PAYOUT_CRON_SECRET` (it must exactly match the Cloud Run secret).
@@ -145,3 +156,13 @@ For the current game, the browser is never the source of truth for coins or with
 
 The existing Render backend, Vercel frontend and Turso database are not deleted by this migration branch. Keep the existing provider environment variables and deployments until the Cloud Run/Pages stack is verified. Do not change the Turso URL or copy/migrate the production database; the Cloud Run backend must connect to the same existing Turso database.
 Cloudflare Pages preview trigger test
+
+
+## 8. Runtime reliability changes
+
+- Interactive withdrawal requests now only reserve the balance and insert a `pending` withdrawal row in Turso. Blockchain sends run from the separately scheduled payout endpoint.
+- Withdrawal status checks no longer trigger payout work or count every pending withdrawal.
+- TON/USD pricing is cached per backend instance for 60 seconds and concurrent cache misses share one provider request.
+- Cloud Run startup checks database connectivity with `SELECT 1`; schema DDL is run explicitly with `npm run db:migrate` as a one-off release step.
+- The payout database lease is 10 minutes, longer than the configured payout request timeout, to reduce the risk of overlapping payout workers.
+- These changes reduce avoidable work but do not prove any particular DAU capacity. Run staged load tests and monitor Turso, TON provider, Cloud Run and queue backlog before raising instance limits.

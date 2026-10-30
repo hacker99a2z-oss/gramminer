@@ -7,14 +7,20 @@ import { botApi } from "./tg.server.ts";
 
 const TONCENTER = "https://toncenter.com/api/v2";
 const RETRY_AFTER_MS = 90_000;
-const LOCK_MS = 60_000;
+// The payout HTTP request is capped below 5 minutes. Keep the database lease
+// comfortably longer so a slow proof-posting pass cannot overlap another worker.
+const LOCK_MS = 10 * 60_000;
 
 const headers = (): Record<string, string> => {
   const key = process.env["TONCENTER_API_KEY"];
   return { "Content-Type": "application/json", ...(key ? { "X-API-Key": key } : {}) };
 };
 
-export async function getTonUsd(): Promise<number> {
+const TON_PRICE_CACHE_TTL_MS = 60_000;
+let tonPriceCache: { value: number; expiresAt: number } | null = null;
+let tonPriceInFlight: Promise<number> | null = null;
+
+async function fetchTonUsd(): Promise<number> {
   try {
     const response = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd");
     if (response.ok) {
@@ -32,6 +38,25 @@ export async function getTonUsd(): Promise<number> {
   const price = payload.rates?.TON?.prices?.USD;
   if (!price || price <= 0) throw new Error("Price unavailable, try again");
   return price;
+}
+
+/** Share one external price lookup across concurrent withdrawals and cache it briefly. */
+export async function getTonUsd(): Promise<number> {
+  const now = Date.now();
+  if (tonPriceCache && tonPriceCache.expiresAt > now) return tonPriceCache.value;
+
+  if (!tonPriceInFlight) {
+    tonPriceInFlight = fetchTonUsd()
+      .then((value) => {
+        tonPriceCache = { value, expiresAt: Date.now() + TON_PRICE_CACHE_TTL_MS };
+        return value;
+      })
+      .finally(() => {
+        tonPriceInFlight = null;
+      });
+  }
+
+  return tonPriceInFlight;
 }
 
 async function wallet() {

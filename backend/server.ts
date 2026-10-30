@@ -3,7 +3,7 @@ import { setDefaultResultOrder } from "node:dns";
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import * as game from "./lib/game.server.ts";
-import { closeDatabase, getDb, initializeDatabase } from "./lib/db.server.ts";
+import { closeDatabase, getDb, verifyDatabaseConnection } from "./lib/db.server.ts";
 import { runPayouts } from "./lib/payout.server.ts";
 import { configureTelegramWebhook, startWelcomeWebhookReply, verifyTelegramWebhookSecret } from "./lib/tg.server.ts";
 
@@ -237,7 +237,7 @@ const server = createServer((req, res) => {
 const autoConfigureTelegramWebhook =
   process.env["TELEGRAM_AUTO_CONFIGURE_WEBHOOK"] === "true";
 
-initializeDatabase()
+verifyDatabaseConnection()
   .then(() => {
     server.listen(port, "0.0.0.0", () => {
       console.log("Gram Miner backend connected to Turso and listening on port " + port);
@@ -258,7 +258,7 @@ initializeDatabase()
     });
   })
   .catch((error) => {
-    console.error("Turso database initialization failed; refusing to start:", error);
+    console.error("Turso database connection check failed; refusing to start:", error);
     closeDatabase();
     process.exitCode = 1;
   });
