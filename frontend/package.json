@@ -12,8 +12,9 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "deploy": "npm run build && wrangler deploy",
-    "cf-typegen": "wrangler types"
+    "deploy": "npm run build:cloudflare && wrangler deploy",
+    "cf-typegen": "wrangler types",
+    "build:cloudflare": "vite build --config vite.cloudflare.config.ts"
   },
   "overrides": {
     "rolldown": "1.2.1"
@@ -95,7 +96,8 @@
     "vite": "8.1.5",
     "vitest": "^4.1.10",
     "@cloudflare/vite-plugin": "^1.66.0",
-    "wrangler": "^4.156.0"
+    "wrangler": "^4.156.0",
+    "nitro": "3.0.260603-beta"
   },
   "engines": {
     "node": "22.x"
