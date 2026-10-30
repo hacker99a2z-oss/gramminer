@@ -2,7 +2,7 @@ import { Address } from "@ton/core";
 import { getDb, withWriteTransaction, asRow, asNumber, asText } from "./db.server.ts";
 import { AD_COOLDOWN_MS, LEADERBOARD_SIZE, MIN_WITHDRAW_MILLI, WITHDRAW_HISTORY_LIMIT, minerById } from "./rules.ts";
 import { getBot, proofChannelUrl, verifyInitData, type TgUser } from "./tg.core.ts";
-import { getTonUsd } from "./payout.server.ts";
+import { getTonUsd } from "./ton-price.server.ts";
 
 const SESSION_TTL_MS = 5 * 60 * 1000;
 const SESSION_RE = /^[a-f0-9]{32}$/;
