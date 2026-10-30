@@ -216,11 +216,9 @@ export async function sendStartWelcome(chatId: number): Promise<void> {
 
   const caption = [
     "🎮 <b>Welcome to Gram Miner!</b>",
-    "⛏️ Start miners in the Mini App and claim rewards when each mining session is complete.",
-    "🎁 Earn extra coins through rewarded ads, daily bonuses, and referrals.",
-    "💎 Once your balance reaches the <b>$0.03 minimum</b>, request a withdrawal to your connected TON wallet.",
-    "📊 Track every request in Withdrawal History, including pending and sent status.",
-    "📢 Follow our Official Channel for updates and join the Supported Group for help and community discussions.",
+    "⛏️ <b>1. Mine</b> — Start miners and collect coins.",
+    "🎁 <b>2. Earn</b> — Get bonus coins from ads and referrals.",
+    "💎 <b>3. Withdraw</b> — Cash out to your TON wallet from $0.03.",
   ].join("\\n\\n");
 
   const inlineKeyboard: Array<Array<Record<string, unknown>>> = [
