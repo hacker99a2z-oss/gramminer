@@ -1,5 +1,6 @@
 // Direct Telegram Bot API integration. No external connector or Lovable credentials.
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { readFile } from "node:fs/promises";
 
 export type TgUser = {
   id: number;
@@ -130,4 +131,101 @@ export function proofChannelUrl(): string | null {
   if (chat?.startsWith("@")) return `https://t.me/${chat.slice(1)}`;
   const url = process.env["PAYMENTS_PROOF_URL"];
   return url && /^https:\/\//.test(url) ? url : null;
+}
+
+
+// ---------- Telegram bot welcome flow ----------
+function telegramHttpsUrl(value: string | undefined): string | null {
+  if (!value) return null;
+  try {
+    const parsed = new URL(value.trim());
+    return parsed.protocol === "https:" ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+export function telegramWebhookSecret(): string {
+  return createHmac("sha256", getBotToken()).update("gramminer-telegram-webhook-v1").digest("hex");
+}
+
+export function verifyTelegramWebhookSecret(value: string | string[] | undefined): boolean {
+  const supplied = Buffer.from(typeof value === "string" ? value : "");
+  const expected = Buffer.from(telegramWebhookSecret());
+  return supplied.length === expected.length && timingSafeEqual(supplied, expected);
+}
+
+export async function configureTelegramWebhook(): Promise<void> {
+  const baseUrl = telegramHttpsUrl(process.env["PUBLIC_BACKEND_URL"]) ??
+    "https://gramminer-backend.onrender.com";
+  const url = new URL("/api/telegram/webhook", baseUrl).toString();
+  await botApi<boolean>("setWebhook", {
+    url,
+    secret_token: telegramWebhookSecret(),
+    allowed_updates: ["message"],
+    drop_pending_updates: false,
+  });
+}
+
+async function sendWelcomeVideo(chatId: number): Promise<void> {
+  const encoded = await readFile(new URL("./assets/gramminer-welcome.mp4.b64", import.meta.url), "utf8");
+  const video = Buffer.from(encoded.trim(), "base64");
+  if (!video.length) throw new Error("Welcome video asset is empty");
+
+  const form = new FormData();
+  form.set("chat_id", String(chatId));
+  form.set("supports_streaming", "true");
+  form.set("video", new Blob([new Uint8Array(video)], { type: "video/mp4" }), "gramminer-welcome.mp4");
+
+  const response = await fetch(`https://api.telegram.org/bot${getBotToken()}/sendVideo`, {
+    method: "POST",
+    body: form,
+    cache: "no-store",
+  });
+  const raw = await response.text();
+  let payload: { ok?: boolean; description?: string } = {};
+  try {
+    payload = raw ? JSON.parse(raw) as typeof payload : {};
+  } catch {
+    throw new Error("Telegram sendVideo returned an invalid response");
+  }
+  if (!response.ok || !payload.ok) {
+    throw new Error(payload.description ?? `Telegram sendVideo failed (${response.status})`);
+  }
+}
+
+export async function sendStartWelcome(chatId: number): Promise<void> {
+  try {
+    await sendWelcomeVideo(chatId);
+  } catch (error) {
+    console.error("[telegram] welcome video could not be sent", error);
+  }
+
+  const appUrl = telegramHttpsUrl(process.env["BOT_APP_URL"]) ??
+    "https://gramminer-nine.vercel.app";
+  const officialChannel = telegramHttpsUrl(process.env["BOT_OFFICIAL_CHANNEL_URL"]);
+  const supportGroup = telegramHttpsUrl(process.env["BOT_SUPPORT_GROUP_URL"]);
+
+  const text = [
+    "🎮 <b>Gram Miner-এ স্বাগতম!</b>",
+    "⛏️ Mini App-এ miner চালু করে সময় শেষে reward claim করে তোমার balance বাড়াতে পারো।",
+    "🎁 Rewarded ad দেখে coins, daily bonus এবং referral reward সংগ্রহ করতে পারো।",
+    "💎 কমপক্ষে <b>$0.03</b> balance হলে connected TON wallet-এ withdrawal request দিতে পারো।",
+    "📊 History থেকে withdrawal-এর pending ও sent status দেখতে পারবে।",
+    "📢 আপডেট ও community help পেতে নিচের Official Channel এবং Supported Group-এ যুক্ত হও।",
+  ].join("\n\n");
+
+  const inlineKeyboard: Array<Array<Record<string, unknown>>> = [
+    [{ text: "🚀 Open App", web_app: { url: appUrl } }],
+  ];
+  if (officialChannel) inlineKeyboard.push([{ text: "📢 Official Channel", url: officialChannel }]);
+  if (supportGroup) inlineKeyboard.push([{ text: "💬 Supported Group", url: supportGroup }]);
+
+  await botApi("sendMessage", {
+    chat_id: chatId,
+    text,
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+    reply_markup: { inline_keyboard: inlineKeyboard },
+  });
 }
