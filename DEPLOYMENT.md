@@ -64,18 +64,20 @@ Keep Root Directory blank (repository root).
 
 ### Payment proof channel and background payout schedule
 
-To publish one proof message after each payout batch is marked sent:
+The app still attempts a payout immediately after a user submits a withdrawal, and it retries pending withdrawals when the withdrawal-status page is opened. The scheduled GitHub Actions workflow is an additional fallback for periods when no users are online.
+
+To enable the free scheduled fallback:
 
 1. Add the Telegram bot to your payment-proof channel as an administrator with permission to send messages.
 2. Set Render variable `PAYMENT_PROOF_CHAT_ID` to the channel username (for example, `@gramminer_payments`) or numeric channel ID.
 3. Set `PAYMENTS_PROOF_URL` to the channel's public link (for example, `https://t.me/gramminer_payments`) for the in-app proof link.
-4. After merging the performance branch into `main`, open GitHub repository **Settings → Secrets and variables → Actions → New repository secret**.
+4. Open GitHub repository **Settings → Secrets and variables → Actions → New repository secret**.
 5. Add a repository secret named `PAYOUT_CRON_SECRET` and set it to the exact same value already configured as the Render service's `PAYOUT_CRON_SECRET`. Never commit or share this secret.
 6. Open **Actions → Gram Miner payout processor** and use **Run workflow** once to verify it.
 
-The GitHub Actions workflow in `.github/workflows/payout-processor.yml` calls the Render payout endpoint directly every 15 minutes using an Authorization bearer token. It processes pending withdrawals and checks in-flight batches; once a batch is marked sent, the backend posts the per-withdrawal proof to the configured channel. The Withdraw page refreshes open withdrawal statuses every 15 seconds while it remains open. A withdrawal is queued immediately, but TON transfer may wait until the next scheduled run (normally up to about 15 minutes, and longer if GitHub's scheduler or Render is delayed).
+The GitHub Actions workflow in `.github/workflows/payout-processor.yml` calls the Render payout endpoint directly every 15 minutes using an Authorization bearer token. It processes pending payouts and checks in-flight batches; when a batch is marked sent, the backend posts a per-withdrawal proof to the configured channel. The Withdraw page refreshes open withdrawal statuses every 15 seconds while it remains open.
 
-Disable any older external payout scheduler after enabling this GitHub Actions workflow, so the same payout processor is not unnecessarily invoked twice. The payout lock still prevents concurrent duplicate runs.
+If the GitHub secret is not configured, the scheduled workflow skips safely; immediate payout attempts from the app continue to work. An older external scheduler that calls the payout URL with the `key` query parameter also remains compatible. Avoid configuring multiple scheduled fallbacks unnecessarily; payout locking prevents concurrent wallet sends, but repeated calls still consume free service capacity.
 
 ### Free-tier capacity notes
 
