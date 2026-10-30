@@ -51,4 +51,6 @@ jobs:
       - name: Validate Pages output
         run: |
           test -f dist/_shell.html
-          test -f dist/_routes.json
+          test -f dist/_redirects
+          test ! -e dist/_worker.js
+          test -d dist/assets
