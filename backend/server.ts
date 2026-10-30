@@ -170,7 +170,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     return;
   }
 
-  if (req.method === "GET" && url.pathname === "/api/public/payout") {
+  if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/public/payout") {
     const secret = process.env["PAYOUT_CRON_SECRET"];
     const key = url.searchParams.get("key") ?? "";
     const supplied = Buffer.from(key);
