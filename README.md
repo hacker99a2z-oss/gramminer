@@ -31,8 +31,9 @@ TURSO_DATABASE_URL=libsql://... TURSO_AUTH_TOKEN=... npm run start:api
 
 ## Deployment
 
-- Vercel Root Directory: `frontend`
-- Render Root Directory: repository root
+- Cloudflare Pages Root Directory: `frontend`
+- Cloudflare Worker entrypoint: `backend/worker.ts`
+- Render Root Directory: repository root (background webhook and TON payout)
 - Render backend environment: `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, and the Telegram/AdsGram/TON secrets.
 
-See [DEPLOYMENT.md](./DEPLOYMENT.md) for Turso setup, data migration and environment variables. Never commit `.env` files, Turso tokens, database passwords, bot tokens, callback secrets or wallet mnemonics.
+See [CLOUDFLARE_WORKERS.md](./CLOUDFLARE_WORKERS.md) for the current Cloudflare CDN/Workers and Render deployment, secure batched actions, and staged cutover. [DEPLOYMENT.md](./DEPLOYMENT.md) is the short deployment entrypoint. Never commit `.env` files, Turso tokens, database passwords, bot tokens, callback secrets or wallet mnemonics.
