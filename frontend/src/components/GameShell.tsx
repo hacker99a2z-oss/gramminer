@@ -2,7 +2,6 @@ import { Link } from "@tanstack/react-router";
 import { HandHeart, Home, Users, Wallet } from "lucide-react";
 import type { ReactNode } from "react";
 import { useGame } from "@/lib/game";
-import coin from "@/assets/coin.png";
 
 const NAV = [
   { to: "/refer", label: "Refer", icon: Users },
@@ -12,7 +11,7 @@ const NAV = [
 ] as const;
 
 export function CoinIcon({ className = "h-5 w-5" }: { className?: string }) {
-  return <img src={coin} alt="" className={className} width={816} height={816} />;
+  return <img src="/coin.svg" alt="" aria-hidden="true" className={className} width={32} height={32} loading="lazy" decoding="async" />;
 }
 
 export function ProfileCard() {

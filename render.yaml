@@ -10,9 +10,9 @@ services:
       - key: NODE_VERSION
         value: 22.18.0
       - key: FRONTEND_URL
-        sync: false
+        value: https://play-for-win-bice.vercel.app
       - key: FRONTEND_URLS
-        sync: false
+        value: https://play-for-win-bice.vercel.app
       - key: TURSO_DATABASE_URL
         sync: false
       - key: TURSO_AUTH_TOKEN
@@ -36,7 +36,7 @@ services:
       - key: PUBLIC_BACKEND_URL
         value: https://gramminer-backend.onrender.com
       - key: BOT_APP_URL
-        value: https://gramminer-nine.vercel.app
+        value: https://play-for-win-bice.vercel.app
       - key: BOT_OFFICIAL_CHANNEL_URL
         sync: false
       - key: BOT_SUPPORT_GROUP_URL

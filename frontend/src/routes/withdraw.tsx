@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { ExternalLink, Wallet } from "lucide-react";
 import { toast } from "sonner";
@@ -35,7 +34,6 @@ const statusStyle: Record<string, string> = {
 
 function Withdraw() {
   const game = useGame();
-  const send = useServerFn(requestWithdraw);
   const address = useWalletAddress();
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
@@ -52,7 +50,7 @@ function Withdraw() {
     if (milli > balance) { toast.error("Not enough balance"); return; }
     setBusy(true);
     try {
-      game.setState(await send({ data: { initData: game.initData, milli, address } }));
+      game.setState(await requestWithdraw({ data: { initData: game.initData, milli, address } }));
       setAmount("");
       haptic("success");
       toast.success("Withdrawal requested — it will be sent automatically");

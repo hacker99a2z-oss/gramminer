@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Crown, HandHeart, Heart } from "lucide-react";
@@ -28,17 +27,15 @@ const medal = ["bg-gold-gradient text-primary-foreground", "bg-muted-foreground/
 
 function Donate() {
   const game = useGame();
-  const give = useServerFn(donate);
-  const board = useServerFn(getLeaderboard);
   const qc = useQueryClient();
-  const { data } = useQuery({ queryKey: ["leaderboard"], queryFn: () => board() });
+  const { data } = useQuery({ queryKey: ["leaderboard"], queryFn: getLeaderboard });
   const [busy, setBusy] = useState(false);
 
   const onGive = async () => {
     if (!game.initData) { toast.error("Open the app inside Telegram"); return; }
     setBusy(true);
     try {
-      game.setState(await give({ data: { initData: game.initData } }));
+      game.setState(await donate({ data: { initData: game.initData } }));
       await qc.invalidateQueries({ queryKey: ["leaderboard"] });
       haptic("success");
       toast.success("Thank you for your kindness ❤️");

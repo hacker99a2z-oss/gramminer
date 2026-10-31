@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { Gift, Lock, Play, Timer, Zap } from "lucide-react";
 import { toast } from "sonner";
@@ -9,7 +8,6 @@ import { errMsg, useGame, useGameClock } from "@/lib/game";
 import { useRewardedAd } from "@/lib/use-ad";
 import { MINERS, minerReadyAt, usd, type MinerRule } from "@/lib/rules";
 import { haptic } from "@/lib/telegram";
-import minerImg from "@/assets/miner.png";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -32,7 +30,6 @@ const fmt = (ms: number) => {
 
 function BonusCard() {
   const game = useGame();
-  const claim = useServerFn(claimBonus);
   const ad = useRewardedAd();
   const [busy, setBusy] = useState(false);
   const bonus = game.state?.bonusAvailable ?? false;
@@ -42,7 +39,7 @@ function BonusCard() {
     setBusy(true);
     try {
       if (bonus) {
-        game.setState(await claim({ data: { initData: game.initData } }));
+        game.setState(await claimBonus({ data: { initData: game.initData } }));
         toast.success("+100 coins claimed!");
       } else {
         await ad.play();
@@ -88,8 +85,6 @@ function BonusCard() {
 function MinerCard({ rule, wide }: { rule: MinerRule; wide?: boolean }) {
   const game = useGame();
   const now = useGameClock();
-  const buy = useServerFn(buyMiner);
-  const claim = useServerFn(claimMiner);
   const [busy, setBusy] = useState(false);
   const owned = game.state?.miners.find((m) => m.id === rule.id);
   const readyAt = owned ? minerReadyAt(owned.startedAt, rule.id) : 0;
@@ -104,10 +99,10 @@ function MinerCard({ rule, wide }: { rule: MinerRule; wide?: boolean }) {
     setBusy(true);
     try {
       if (!owned) {
-        game.setState(await buy({ data: { initData: game.initData, minerId: rule.id } }));
+        game.setState(await buyMiner({ data: { initData: game.initData, minerId: rule.id } }));
         toast.success(`Miner #${rule.id} is now mining!`);
       } else {
-        game.setState(await claim({ data: { initData: game.initData, minerId: rule.id } }));
+        game.setState(await claimMiner({ data: { initData: game.initData, minerId: rule.id } }));
         toast.success(`${usd(rule.rewardMilli)} added to your withdraw balance`);
       }
       haptic("success");
@@ -123,11 +118,12 @@ function MinerCard({ rule, wide }: { rule: MinerRule; wide?: boolean }) {
     <div className={`card-gm relative flex overflow-hidden p-3 ${wide ? "col-span-2 flex-row items-center gap-3" : "flex-col"} ${owned ? "card-gold-edge" : ""}`}>
       <span className="absolute left-2 top-2 rounded-full bg-secondary px-2 py-0.5 font-display text-[10px] font-bold text-primary">#{rule.id}</span>
       <img
-        src={minerImg}
+        src="/miner.svg"
         alt={`Miner ${rule.id}`}
         loading="lazy"
-        width={816}
-        height={816}
+        decoding="async"
+        width={120}
+        height={120}
         className={`${wide ? "h-24 w-24" : "mx-auto h-20 w-20"} object-contain ${owned && !ready ? "mining-pulse" : ""} ${owned ? "" : "opacity-60 grayscale"}`}
       />
       <div className={wide ? "flex-1" : "mt-1"}>

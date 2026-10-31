@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Check, Copy, Send, Users } from "lucide-react";
@@ -27,14 +26,12 @@ export const Route = createFileRoute("/refer")({
 
 function Refer() {
   const game = useGame();
-  const list = useServerFn(getReferrals);
-  const claim = useServerFn(claimReferral);
   const qc = useQueryClient();
   const [popup, setPopup] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const { data: refs } = useQuery({
     queryKey: ["referrals", game.user.id],
-    queryFn: () => list({ data: { initData: game.initData! } }),
+    queryFn: () => getReferrals({ data: { initData: game.initData! } }),
     enabled: !!game.initData,
   });
 
@@ -54,7 +51,7 @@ function Refer() {
     if (!game.initData) return;
     setBusyId(friendId);
     try {
-      const r = await claim({ data: { initData: game.initData, friendId } });
+      const r = await claimReferral({ data: { initData: game.initData, friendId } });
       if (!r.ok) {
         haptic("error");
         setPopup(true);
