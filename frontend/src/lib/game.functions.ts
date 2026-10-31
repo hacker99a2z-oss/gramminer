@@ -76,7 +76,6 @@ function persistQueue(): void {
 
 function activateQueue(initData: string): number {
   const userId = getTelegramUserId(initData);
-  currentInitData = initData;
   if (queueUserId !== userId) {
     // Never switch the active account while its request or UI action promises
     // are still in flight. Persisted, unacknowledged commands are scoped to
@@ -105,6 +104,7 @@ function activateQueue(initData: string): number {
       }
     }
   }
+  currentInitData = initData;
   if (!checkpointTimer && typeof window !== "undefined") {
     checkpointTimer = window.setInterval(() => {
       if (currentInitData && queue.length) void flushPendingGameActions(currentInitData).catch(() => undefined);
