@@ -118,7 +118,7 @@ The GitHub Actions payout workflow should call the Worker URL, not the Render UR
 - Keep repository secret `PAYOUT_CRON_SECRET` equal to the value on both Render and Worker.
 - The Worker verifies the bearer secret and forwards the request to Render. Render performs the payout lock, TON signing, transfer confirmation and proof posting.
 
-The Render origin remains directly addressable on its `onrender.com` hostname, so keep the payout secret strong and never expose it in frontend code or query strings. The app itself must never call Render directly.
+The Render origin remains directly addressable on its `onrender.com` hostname. After the Worker and Pages cutover has passed all smoke tests, set Render's `EDGE_ONLY_API=true` so direct requests to legacy `/api/game/*` and AdsGram reward routes are rejected. Leave this switch off until that cutover is complete, to preserve rollback. The payout secret must remain strong and must never appear in frontend code. The app itself must never call Render directly.
 
 ## 6. Security and cache controls
 
@@ -141,7 +141,7 @@ The Render origin remains directly addressable on its `onrender.com` hostname, s
 6. Confirm a forged action with an invalid miner ID, unknown referral, duplicate bonus, or insufficient coins cannot change balances.
 7. Verify AdsGram's server callback and withdrawal flow separately. Use test balances only; do not send real TON during smoke tests.
 8. Run a payout workflow manually with the staging wallet/database before production.
-9. Verify Telegram `/start` reaches Render through the Worker proxy and sends the welcome reply.
+9. Verify Telegram `/start` reaches Render through the Worker proxy and sends the welcome reply.\n10. Only after all preceding tests pass, set Render `EDGE_ONLY_API=true`; verify legacy Render game routes now return 403 while Worker game routes continue working.
 
 A successful CI build is not proof of 300,000 DAU capacity. Cloudflare Workers Free currently has a 100,000 request/day ceiling and a 10 ms CPU budget per HTTP invocation. One request per user per day at 300,000 DAU already exceeds that daily free request allowance. Measure API requests/user, database reads/writes, p95 latency, CPU, and peak concurrency before choosing a paid capacity plan.
 
