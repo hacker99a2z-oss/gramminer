@@ -165,12 +165,12 @@ async function handle(request: Request, ctx: ExecutionContext): Promise<Response
     (request.method === "POST" && path === "/api/telegram/webhook") ||
     (request.method === "GET" && path === "/api/public/payout")
   ) {
-    const renderBase = process.env["RENDER_BACKEND_URL"]?.replace(/\\/+$/, "");
+    const renderBase = process.env["RENDER_BACKEND_URL"]?.replace(/\/+$/, "");
     if (!renderBase) return json(request, path, 503, { error: "Render origin is not configured" });
 
     if (path === "/api/public/payout") {
       const expected = process.env["PAYOUT_CRON_SECRET"] ?? "";
-      const bearer = /^Bearer\\s+(.+)$/i.exec(request.headers.get("authorization") ?? "")?.[1] ?? "";
+      const bearer = /^Bearer\s+(.+)$/i.exec(request.headers.get("authorization") ?? "")?.[1] ?? "";
       const supplied = bearer || url.searchParams.get("key") || "";
       const a = new TextEncoder().encode(supplied);
       const b = new TextEncoder().encode(expected);
