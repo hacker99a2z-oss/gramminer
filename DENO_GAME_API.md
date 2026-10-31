@@ -48,7 +48,7 @@ deno deploy --org YOUR_DENO_ORG --app gramminer-game
 
 Do not use `--prod` for the first staging deployment. Configure environment variables in the Deno Deploy app's **Development/preview** context first. The entrypoint is relative to the repository root, and `deno.json` sets `nodeModulesDir: "auto"` so dependencies from the root `package.json` are resolved.
 
-Set the following runtime environment variables in the **Development/preview** context first:
+After the first CLI app creation, add these runtime environment variables in the app's **Development** context (the preview/non-production context):
 
 | Name | Type | Value |
 |---|---|---|
@@ -60,8 +60,14 @@ Set the following runtime environment variables in the **Development/preview** c
 
 Do not use production Turso credentials for this first Deno deployment. Do not add wallet mnemonics, payout cron secrets, TONCenter credentials, or AdsGram reward secrets to this Deno application. The core game routes do not need them.
 
-6. Deploy and check `GET /health` and `GET /ready`. The health endpoint does not need credentials; readiness returns 503 until a valid staging Turso connection is configured.
-7. Test with a dedicated Telegram test account and staging database: load, buy miner, claim miner when ready, daily bonus, and donation. Check duplicate claims and insufficient balance. Never perform these tests against production balances.
+Then deploy the staging revision from the repository root:
+
+```sh
+deno deploy --org YOUR_DENO_ORG --app gramminer-game
+```
+
+1. Copy the exact preview URL shown by Deno Deploy and check `GET /health` and `GET /ready`. The health endpoint does not need credentials; readiness returns 503 until a valid staging Turso connection is configured.
+2. Test with a dedicated Telegram test account and staging database: load, buy miner, claim miner when ready, daily bonus, and donation. Check duplicate claims and insufficient balance. Never perform these tests against production balances.
 
 ## Local Deno commands
 
