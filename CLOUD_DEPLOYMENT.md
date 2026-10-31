@@ -1,7 +1,5 @@
-# Gram Miner — Cloudflare deployment documents
+# Gram Miner — Cloud deployment
 
-The active backend deployment instructions are now in **[CLOUDFLARE_WORKERS.md](./CLOUDFLARE_WORKERS.md)**.
+The current architecture and deployment guide is [CLOUDFLARE_WORKERS.md](./CLOUDFLARE_WORKERS.md).
 
-The old Cloud Run setup below has been superseded. Do not create or deploy a Cloud Run service for the current migration.
-
-The Node Dockerfile and Render service are intentionally retained as rollback and TON payout infrastructure until the Cloudflare Worker has passed smoke testing. The existing Turso production database must remain unchanged.
+It uses Cloudflare Pages/CDN and Workers for the public Mini App and API, Render for the Telegram webhook and TON payout service, and the existing Turso database as the authoritative game store. No Deno Deploy, Supabase Functions, Appwrite Functions, Cloud Run, or additional API hosting is required.
