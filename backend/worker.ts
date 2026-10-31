@@ -24,10 +24,6 @@ const postRoutes: Record<string, (body: unknown) => Promise<unknown>> = {
     const data = z.object({ initData, actions: z.array(z.unknown()).min(1).max(20) }).parse(body);
     return game.syncActions(data.initData, data.actions);
   },
-  "/api/game/sync": async (body) => {
-    const data = z.object({ initData, actions: z.array(z.unknown()).min(1).max(20) }).parse(body);
-    return game.syncActions(data.initData, data.actions);
-  },
   "/api/game/referrals": async (body) => game.referrals(withInit.parse(body).initData),
   "/api/game/claim-referral": async (body) => {
     const data = z.object({ initData, friendId: z.number().int().positive() }).parse(body);
@@ -232,7 +228,7 @@ async function handle(request: Request, ctx: ExecutionContext): Promise<Response
 }
 
 export default {
-  async fetch(request: Request): Promise<Response> {
+  async fetch(request: Request, _env: unknown, ctx: ExecutionContext): Promise<Response> {
     try {
       return await handle(request, ctx);
     } catch (error) {
