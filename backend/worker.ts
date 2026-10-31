@@ -24,6 +24,10 @@ const postRoutes: Record<string, (body: unknown) => Promise<unknown>> = {
     const data = z.object({ initData, actions: z.array(z.unknown()).min(1).max(20) }).parse(body);
     return game.syncActions(data.initData, data.actions);
   },
+  "/api/game/sync": async (body) => {
+    const data = z.object({ initData, actions: z.array(z.unknown()).min(1).max(20) }).parse(body);
+    return game.syncActions(data.initData, data.actions);
+  },
   "/api/game/referrals": async (body) => game.referrals(withInit.parse(body).initData),
   "/api/game/claim-referral": async (body) => {
     const data = z.object({ initData, friendId: z.number().int().positive() }).parse(body);
@@ -67,7 +71,7 @@ function headers(request: Request, path: string): Headers {
   });
   const origin = request.headers.get("Origin");
   if (origin) {
-    if (path.startsWith("/api/public/")) {
+    if (path === "/api/game/leaderboard" || path.startsWith("/api/public/")) {
       result.set("access-control-allow-origin", "*");
     } else {
       const allowed = (process.env["FRONTEND_URLS"] ?? process.env["FRONTEND_URL"] ?? "")
@@ -99,7 +103,7 @@ async function readJson(request: Request): Promise<unknown> {
   return raw ? JSON.parse(raw) : {};
 }
 
-async function handle(request: Request): Promise<Response> {
+async function handle(request: Request, ctx: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname;
 
@@ -124,7 +128,15 @@ async function handle(request: Request): Promise<Response> {
   }
 
   if (request.method === "GET" && path === "/api/game/leaderboard") {
-    return json(request, path, 200, await game.leaderboard());
+    const cacheKey = new Request(new URL(path, url.origin).toString(), { method: "GET" });
+    const cached = await caches.default.match(cacheKey);
+    if (cached) return cached;
+    const fresh = json(request, path, 200, await game.leaderboard());
+    const cacheHeaders = new Headers(fresh.headers);
+    cacheHeaders.set("cache-control", "public, max-age=0, s-maxage=15, stale-while-revalidate=30");
+    const cacheable = new Response(fresh.body, { status: fresh.status, headers: cacheHeaders });
+    ctx.waitUntil(caches.default.put(cacheKey, cacheable.clone()));
+    return cacheable;
   }
 
   if (request.method === "GET" && path === "/api/public/adsgram/reward") {
@@ -151,10 +163,56 @@ async function handle(request: Request): Promise<Response> {
     }
   }
 
-  if (request.method === "GET" && path === "/api/public/payout") {
-    return json(request, path, 503, {
-      error: "Payout processing remains on the existing Node service.",
-    });
+  // Only these explicit Render-origin routes are proxied. Never create an
+  // arbitrary URL proxy, and never cache webhook or payout responses.
+  if (
+    (request.method === "POST" && path === "/api/telegram/webhook") ||
+    (request.method === "GET" && path === "/api/public/payout")
+  ) {
+    const renderBase = process.env["RENDER_BACKEND_URL"]?.replace(/\\/+$/, "");
+    if (!renderBase) return json(request, path, 503, { error: "Render origin is not configured" });
+
+    if (path === "/api/public/payout") {
+      const expected = process.env["PAYOUT_CRON_SECRET"] ?? "";
+      const bearer = /^Bearer\\s+(.+)$/i.exec(request.headers.get("authorization") ?? "")?.[1] ?? "";
+      const supplied = bearer || url.searchParams.get("key") || "";
+      const a = new TextEncoder().encode(supplied);
+      const b = new TextEncoder().encode(expected);
+      if (!expected || a.length !== b.length || !timingSafeEqual(a, b)) {
+        return json(request, path, 403, { error: "Forbidden" });
+      }
+    }
+
+    try {
+      const target = new URL(path, renderBase);
+      if (path === "/api/public/payout") target.search = "";
+      const forwardHeaders = new Headers(request.headers);
+      forwardHeaders.delete("host");
+      if (path === "/api/public/payout") {
+        forwardHeaders.set("authorization", "Bearer " + process.env["PAYOUT_CRON_SECRET"]);
+      }
+      const upstream = await fetch(target, {
+        method: request.method,
+        headers: forwardHeaders,
+        body: request.method === "POST" ? request.body : undefined,
+        redirect: "manual",
+        cache: "no-store",
+      });
+      const responseHeaders = new Headers();
+      for (const name of ["content-type", "retry-after", "cache-control"]) {
+        const value = upstream.headers.get(name);
+        if (value) responseHeaders.set(name, value);
+      }
+      responseHeaders.set("cache-control", "no-store");
+      return new Response(upstream.body, {
+        status: upstream.status,
+        statusText: upstream.statusText,
+        headers: responseHeaders,
+      });
+    } catch (error) {
+      console.error("[render-proxy] request failed", error);
+      return json(request, path, 502, { error: "Render background service unavailable" });
+    }
   }
 
   if (request.method === "POST" && postRoutes[path]) {
@@ -176,7 +234,7 @@ async function handle(request: Request): Promise<Response> {
 export default {
   async fetch(request: Request): Promise<Response> {
     try {
-      return await handle(request);
+      return await handle(request, ctx);
     } catch (error) {
       console.error("Gram Miner Worker request failed", error);
       const path = new URL(request.url).pathname;
