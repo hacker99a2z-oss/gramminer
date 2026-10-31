@@ -14,7 +14,7 @@ export type ApiBaseUrls = Record<ApiService, string>;
 const DEFAULT_BACKEND_URL = "https://gramminer-backend.onrender.com";
 
 function normalizeBaseUrl(value: string | undefined): string | undefined {
-  const normalized = value?.trim().replace(/\\/+$/, "");
+  const normalized = value?.trim().replace(/\/+$/, "");
   return normalized || undefined;
 }
 
