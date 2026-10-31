@@ -7,7 +7,6 @@ on:
       - ".dockerignore"
       - "package.json"
       - "wrangler.jsonc"
-      - "deno.json"
       - "backend/**"
       - "frontend/**"
       - "*.md"
@@ -20,7 +19,6 @@ on:
       - ".dockerignore"
       - "package.json"
       - "wrangler.jsonc"
-      - "deno.json"
       - "backend/**"
       - "frontend/**"
       - "*.md"
@@ -30,27 +28,13 @@ permissions:
   contents: read
 
 jobs:
-  deno-game-api:
-    name: Check Deno game API
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Deno
-        uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-      - name: Type-check Deno game API
-        run: deno task game-api:check
-      - name: Test Deno game API route boundaries
-        run: deno task game-api:test
-
-  node-backend-rollback:
-    name: Build Node payout and rollback image
+  render-backend:
+    name: Build Render Node backend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Build Node backend container
-        run: docker build --tag gramminer-node-backend:ci .
+        run: docker build --tag gramminer-render-backend:ci .
 
   cloudflare-worker:
     name: Bundle Cloudflare Workers backend
