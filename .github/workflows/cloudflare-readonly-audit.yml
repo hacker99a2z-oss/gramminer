@@ -1,0 +1,60 @@
+name: Cloudflare read-only audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      account_id:
+        description: Cloudflare Account ID
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CF_ACCOUNT_ID: ${{ inputs.account_id }}
+    steps:
+      - name: Audit Cloudflare resources (GET only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$CF_TOKEN" ]; then echo 'Missing CLOUDFLARE_API_TOKEN secret' >> "$GITHUB_STEP_SUMMARY"; exit 1; fi
+          if ! [[ "$CF_ACCOUNT_ID" =~ ^[a-fA-F0-9]{32}$ ]]; then echo 'Invalid account ID' >> "$GITHUB_STEP_SUMMARY"; exit 1; fi
+          API='https://api.cloudflare.com/client/v4'
+          AUTH="Authorization: Bearer $CF_TOKEN"
+          echo '# Gram Miner Cloudflare audit' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Read-only: this workflow uses GET requests only. Secret values are not printed.' >> "$GITHUB_STEP_SUMMARY"
+          echo '## Token verification' >> "$GITHUB_STEP_SUMMARY"
+          curl -sS "$API/user/tokens/verify" -H "$AUTH" | jq -r 'if .success then "- Token status: `\(.result.status)`" else "- Token verification failed: `\([.errors[].message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
+          echo '## Pages project: gramminer-c68' >> "$GITHUB_STEP_SUMMARY"
+          curl -sS "$API/accounts/$CF_ACCOUNT_ID/pages/projects/gramminer-c68" -H "$AUTH" | jq -r 'if .success then "- Project: `\(.result.name)`\n- Production branch: `\(.result.production_branch // "unknown")`\n- Default domain: `\(.result.subdomain // "unknown")`\n- Git source: `\(.result.source.type // "unknown")`\n- Production variable names: `\(((.result.deployment_configs.production.env_vars // {}) | keys) | join(", "))`\n- Preview variable names: `\(((.result.deployment_configs.preview.env_vars // {}) | keys) | join(", "))`" else "- Pages API error: `\([.errors[].message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
+          echo '## Recent Pages production deployments' >> "$GITHUB_STEP_SUMMARY"
+          curl -sS "$API/accounts/$CF_ACCOUNT_ID/pages/projects/gramminer-c68/deployments?env=production&per_page=5" -H "$AUTH" | jq -r 'if .success then (.result[] | "- `\(.created_on // "unknown")` | status `\(.latest_stage.status // "unknown")` | branch `\(.deployment_trigger.metadata.branch // "unknown")` | URL `\(.url // "unknown")`") else "- Deployments API error: `\([.errors[].message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
+          echo '## Worker: gramminer-backend' >> "$GITHUB_STEP_SUMMARY"
+          curl -sS "$API/accounts/$CF_ACCOUNT_ID/workers/scripts" -H "$AUTH" | jq -r 'if .success then (if any(.result[]; .id == "gramminer-backend") then "- Worker script found" else "- Worker script NOT found" end) else "- Workers scripts API error: `\([.errors[].message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
+          curl -sS "$API/accounts/$CF_ACCOUNT_ID/workers/scripts/gramminer-backend/settings" -H "$AUTH" | jq -r 'if .success then "- Compatibility date: `\(.result.compatibility_date // "unknown")`\n- Bindings (names/types only): `\([.result.bindings[]? | "\(.name):\(.type)"] | join(", "))`" else "- Worker settings API error: `\([.errors[].message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
+          ROOT_SUB=$(curl -sS "$API/accounts/$CF_ACCOUNT_ID/workers/subdomain" -H "$AUTH")
+          SCRIPT_SUB=$(curl -sS "$API/accounts/$CF_ACCOUNT_ID/workers/scripts/gramminer-backend/subdomain" -H "$AUTH")
+          SUBDOMAIN=$(echo "$ROOT_SUB" | jq -r '.result.subdomain // empty')
+          ENABLED=$(echo "$SCRIPT_SUB" | jq -r '.result.enabled // false')
+          if [ -n "$SUBDOMAIN" ] && [ "$ENABLED" = true ]; then
+            WORKER_URL="https://gramminer-backend.$SUBDOMAIN.workers.dev"
+            echo "- workers.dev URL: $WORKER_URL" >> "$GITHUB_STEP_SUMMARY"
+            for endpoint in health ready; do
+              CODE=$(curl -sS -o /dev/null -w '%{http_code}' "$WORKER_URL/$endpoint" || true)
+              echo "- Worker /$endpoint: HTTP $CODE" >> "$GITHUB_STEP_SUMMARY"
+            done
+          else
+            echo '- Worker workers.dev URL is not enabled or account subdomain is unavailable.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo '## Public Pages health' >> "$GITHUB_STEP_SUMMARY"
+          PAGE_CODE=$(curl -sS -o /dev/null -w '%{http_code}' https://gramminer-c68.pages.dev/ || true)
+          echo "- Pages frontend: HTTP $PAGE_CODE" >> "$GITHUB_STEP_SUMMARY"
+          echo '## Security note' >> "$GITHUB_STEP_SUMMARY"
+          echo '- Cloudflare environment and secret values are not emitted. Only configuration key names and binding types are reported.' >> "$GITHUB_STEP_SUMMARY"
+          echo '- No deploy, update, delete, or other write API is called.' >> "$GITHUB_STEP_SUMMARY"
