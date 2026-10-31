@@ -61,8 +61,6 @@ Add these as **Secret** values (not plain text):
 
 Never put real secrets in source files, `wrangler.jsonc`, `VITE_*` variables, screenshots or chat. Do not add `TON_WALLET_MNEMONIC`, `TONCENTER_API_KEY`, or `PAYOUT_CRON_SECRET` to the Worker; keep them on the existing payout service.
 
-The Wrangler config enables Node.js compatibility and `process.env` population so existing service modules can read Cloudflare-bound variables/secrets. The Worker database module imports `@libsql/client/web`, as required by Cloudflare's official Turso Workers guide.
-
 ## 3. Connect Cloudflare Pages to the Worker
 
 After the Worker deploys successfully, copy its exact `workers.dev` URL.
@@ -76,6 +74,26 @@ Redeploy Pages so `VITE_BACKEND_URL` is compiled into the browser bundle. Set th
 - `https://gramminer-c68.pages.dev`
 - `https://3f5ed6da.gramminer-c68.pages.dev`
 - The existing Vercel origin while rollback is required.
+
+### Optional service-specific API origins
+
+The frontend now supports moving one API group at a time without changing application code. Configure these **optional build-time variables in Cloudflare Pages** only after the destination service is deployed and tested:
+
+| Variable | Routes |
+|---|---|
+| `VITE_GAME_API_URL` | `/api/game/load`, `claim-bonus`, `buy-miner`, `claim-miner`, `donate` |
+| `VITE_ADS_API_URL` | `/api/game/start-ad`, `mark-ad-started`, `cancel-ad`, `ad-status` |
+| `VITE_REFERRAL_API_URL` | `/api/game/referrals`, `claim-referral` |
+| `VITE_LEADERBOARD_API_URL` | `GET /api/game/leaderboard` |
+| `VITE_FINANCE_API_URL` | `/api/game/withdraw`, `withdrawal-status` |
+
+Each value is the **origin/base URL of a compatible HTTP API**, for example `https://game-api.example.com`. The frontend appends the existing route path and sends the same method and JSON body as it does today. The destination must preserve the current validation, authentication, response shape, CORS allowlist and database semantics.
+
+Leave all five overrides unset initially. Each unset group automatically uses `VITE_BACKEND_URL`, so the current single-Worker deployment continues to work. Do not paste a provider control-plane URL as an override: a Supabase project URL or Appwrite API URL is not, by itself, an implementation of these Gram Miner routes. A provider-specific function/adapter must first expose the compatible HTTP route contract. In particular, do not move balance-changing logic into independently implemented functions until transaction and idempotency behaviour has been tested against a staging database.
+
+The AdsGram server reward callback (`/api/public/adsgram/reward`) is configured separately in AdsGram/Worker settings; it is not selected by the browser's `VITE_ADS_API_URL`. TON signing, payout batching and the payout cron remain on Render.
+
+After changing any `VITE_*` value, redeploy Pages because these values are embedded at build time. Any additional API origin must allow the Pages production and preview origins in its CORS settings.
 
 ## 4. Health checks and smoke tests
 
