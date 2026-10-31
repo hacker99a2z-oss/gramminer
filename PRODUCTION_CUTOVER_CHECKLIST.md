@@ -163,7 +163,7 @@ Only after all production checks pass:
 
 If any check fails, set `EDGE_ONLY_API=false` and restore Pages `VITE_BACKEND_URL`/ `BACKEND_URL` to the last working endpoint. Do not delete the Turso database or Render service.
 
-## What must be done by the account owner
+## Render Free tier warning\n\nThe currently connected Render backend was confirmed to be on the Free plan. Render Free web services sleep after 15 minutes without inbound traffic and can take about one minute to wake; Render says Free services are for testing/hobby use and not production. This does not affect the Cloudflare-hosted game API, but it can delay the Telegram webhook and payout processing. Plan an always-on Render instance before relying on time-sensitive production payouts or bot replies. See https://render.com/docs/free.\n\n## What must be done by the account owner
 
 - Connect/authorize the GitHub repository in Cloudflare if it is not already connected.
 - Create the blank staging Turso database and keep its credentials private.
