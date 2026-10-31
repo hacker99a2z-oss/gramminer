@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { getWithdrawalStatus, loadGame } from "./game.functions";
+import { getWithdrawalStatus, loadGame, resumePendingGameActions, flushPendingGameActions, flushPendingGameActionsWithBeacon, setGameActionStateListener } from "./game.functions";
 import { tgApp } from "./telegram";
 import type { Snapshot } from "./game.types";
 
@@ -55,12 +55,37 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const [botUsername, setBot] = useState<string | null>(null);
   const [proofUrl, setProof] = useState<string | null>(null);
 
+  useEffect(() => {
+    setGameActionStateListener(updateState);
+    return () => setGameActionStateListener(null);
+  }, [updateState]);
+
+  // Save and send one bounded command batch when the Mini App is hidden or closed.
+  // The local queue is retained until a normal server response confirms the commit.
+  useEffect(() => {
+    if (!initData) return;
+    const flushOnExit = () => flushPendingGameActionsWithBeacon(initData);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") flushOnExit();
+      else void flushPendingGameActions(initData).catch(() => undefined);
+    };
+    window.addEventListener("pagehide", flushOnExit);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pageshow", onVisibilityChange);
+    return () => {
+      window.removeEventListener("pagehide", flushOnExit);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pageshow", onVisibilityChange);
+    };
+  }, [initData]);
+
   const refresh = useCallback(async () => {
     const data = tgApp()?.initData;
     if (!data) return;
     try {
       const r = await loadGame({ data: { initData: data } });
       updateState(r.state);
+      await resumePendingGameActions(data);
       setBot(r.botUsername);
       setProof(r.proofUrl);
       setError(null);
