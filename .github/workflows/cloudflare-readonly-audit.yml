@@ -6,6 +6,7 @@ on:
       account_id:
         description: Cloudflare Account ID
         required: true
+        default: "9ef1c9900940c31dcdfeb1bccc8482c4"
         type: string
 
 permissions:
