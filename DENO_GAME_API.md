@@ -95,6 +95,6 @@ Once preview testing succeeds, configure the Deno app's production context with 
 
 ## Free plan capacity note
 
-Deno Deploy's current Free plan lists 1 million inbound requests/month, 20 GiB egress, and 10 active CPU hours/month, plus memory-time and deployment limits. The CPU budget is only 600 minutes: at 3 million DAU, one daily request per user is already 3 million requests/month, exceeding the inbound request allowance before counting any other endpoints. Do not treat this free tier as a guarantee for 300K DAU.
+Deno Deploy's current Free plan lists 1 million inbound requests/month, 20 GiB egress, and 10 active CPU hours/month, plus memory-time and deployment limits. The CPU budget is only 600 minutes: at 300,000 DAU, even one request per user per day is 9 million requests/month, exceeding the inbound request allowance before counting any other endpoints. Do not treat this free tier as a guarantee for 300K DAU.
 
 Review current limits before launch: https://deno.com/deploy/pricing
