@@ -525,7 +525,7 @@ async function ensureActionReceiptsTable(): Promise<void> {
  */
 export async function syncActions(initData: string, rawActions: unknown) {
   const tg = await auth(initData);
-  const actions = z.array(syncActionSchema).min(1).max(20).parse(rawActions);
+  const actions = z.array(syncActionSchema).min(1).max(5).parse(rawActions);
   await ensurePlayer(tg);
   await ensureActionReceiptsTable();
 
