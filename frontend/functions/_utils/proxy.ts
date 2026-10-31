@@ -11,10 +11,20 @@ export async function proxyBackendGet(
   target.search = incoming.search;
 
   try {
+    const forwardHeaders = new Headers({
+      accept: request.headers.get("accept") ?? "*/*",
+    });
+    // The scheduled payout caller authenticates with a bearer token. Forward
+    // it only through this fixed Pages -> Worker proxy path; never expose it
+    // in browser JavaScript or append it to a URL.
+    const authorization = request.headers.get("authorization");
+    if (authorization) forwardHeaders.set("authorization", authorization);
+
     const upstream = await fetch(target, {
       method: "GET",
-      headers: { accept: request.headers.get("accept") ?? "*/*" },
+      headers: forwardHeaders,
       redirect: "manual",
+      cache: "no-store",
     });
     const headers = new Headers();
     for (const name of ["content-type", "cache-control", "retry-after"]) {

@@ -24,6 +24,10 @@ const postRoutes: Record<string, (body: unknown) => Promise<unknown>> = {
     return game.claimMiner(data.initData, data.minerId);
   },
   "/api/game/donate": async (body) => game.donate(withInit.parse(body).initData),
+  "/api/game/sync": async (body) => {
+    const data = z.object({ initData, actions: z.array(z.unknown()).min(1).max(20) }).parse(body);
+    return game.syncActions(data.initData, data.actions);
+  },
   "/api/game/referrals": async (body) => game.referrals(withInit.parse(body).initData),
   "/api/game/claim-referral": async (body) => {
     const data = z.object({ initData, friendId: z.number().int().positive() }).parse(body);
@@ -149,6 +153,17 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     } else {
       json(res, 200, { ok: true });
     }
+    return;
+  }
+
+  // Once the Cloudflare Worker is live, stop clients from bypassing the edge
+  // and hitting the legacy Render game routes directly. Keep this switch off
+  // until the Pages/Worker cutover has passed its smoke tests.
+  if (
+    process.env["EDGE_ONLY_API"] === "true" &&
+    (url.pathname.startsWith("/api/game/") || url.pathname === "/api/public/adsgram/reward")
+  ) {
+    text(res, 403, "Use the Cloudflare API endpoint");
     return;
   }
 

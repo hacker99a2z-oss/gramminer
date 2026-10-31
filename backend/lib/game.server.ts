@@ -1,4 +1,5 @@
 import { Address } from "@ton/core";
+import { z } from "zod";
 import { getDb, withWriteTransaction, asRow, asNumber, asText } from "./db.server.ts";
 import { AD_COOLDOWN_MS, LEADERBOARD_SIZE, MIN_WITHDRAW_MILLI, WITHDRAW_HISTORY_LIMIT, minerById } from "./rules.ts";
 import { getBot, proofChannelUrl, verifyInitData, type TgUser } from "./tg.core.ts";
@@ -471,4 +472,196 @@ export async function rewardAd(tgId: number): Promise<string> {
     });
     return "ok";
   });
+}
+
+
+const syncActionSchema = z.discriminatedUnion("type", [
+  z.object({ id: z.string().uuid(), type: z.literal("claim-bonus") }).strict(),
+  z.object({ id: z.string().uuid(), type: z.literal("buy-miner"), minerId: z.number().int().min(1).max(5) }).strict(),
+  z.object({ id: z.string().uuid(), type: z.literal("claim-miner"), minerId: z.number().int().min(1).max(5) }).strict(),
+  z.object({ id: z.string().uuid(), type: z.literal("donate") }).strict(),
+  z.object({ id: z.string().uuid(), type: z.literal("claim-referral"), friendId: z.number().int().positive() }).strict(),
+]);
+type SyncAction = z.infer<typeof syncActionSchema>;
+type SyncActionResult = {
+  actionId: string;
+  type: SyncAction["type"];
+  ok: boolean;
+  duplicate?: boolean;
+  data?: { ok?: boolean; notEligible?: boolean };
+  error?: string;
+};
+
+let actionReceiptsReady = false;
+let actionReceiptsInitialization: Promise<void> | null = null;
+
+async function ensureActionReceiptsTable(): Promise<void> {
+  if (actionReceiptsReady) return;
+  if (!actionReceiptsInitialization) {
+    actionReceiptsInitialization = getDb().execute(`
+      CREATE TABLE IF NOT EXISTS game_action_receipts (
+        tg_id INTEGER NOT NULL,
+        action_id TEXT NOT NULL,
+        action_json TEXT NOT NULL,
+        result_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (tg_id, action_id)
+      )
+    `).then(() => {
+      actionReceiptsReady = true;
+    }).finally(() => {
+      actionReceiptsInitialization = null;
+    });
+  }
+  await actionReceiptsInitialization;
+}
+
+/**
+ * Apply a bounded batch of server-validated game commands.
+ *
+ * The client sends commands, never coin/balance values. Each command is applied
+ * in its own write transaction with a per-user idempotency receipt, so retrying
+ * a batch after a dropped response cannot double-credit a balance.
+ */
+export async function syncActions(initData: string, rawActions: unknown) {
+  const tg = await auth(initData);
+  const actions = z.array(syncActionSchema).min(1).max(5).parse(rawActions);
+  await ensurePlayer(tg);
+  await ensureActionReceiptsTable();
+
+  const results: SyncActionResult[] = [];
+  for (const action of actions) {
+    try {
+      const result = await withWriteTransaction(async (tx): Promise<SyncActionResult> => {
+        const existing = await tx.execute({
+          sql: "SELECT action_json, result_json FROM game_action_receipts WHERE tg_id = ? AND action_id = ?",
+          args: [tg.id, action.id],
+        });
+        if (existing.rows.length) {
+          const row = asRow(existing.rows[0]);
+          if (asText(row["action_json"]) !== JSON.stringify(action)) {
+            throw new Error("Action ID was already used for a different command");
+          }
+          const previous = JSON.parse(asText(row["result_json"])) as SyncActionResult;
+          return { ...previous, duplicate: true };
+        }
+
+        let data: SyncActionResult["data"] = { ok: true };
+        switch (action.type) {
+          case "claim-bonus": {
+            const today = utcDate();
+            const update = await tx.execute({
+              sql: `UPDATE players SET coins = coins + 100, last_bonus_date = ?
+                WHERE tg_id = ? AND (last_bonus_date IS NULL OR last_bonus_date < ?)`,
+              args: [today, tg.id, today],
+            });
+            requireChanged(update.rowsAffected, "Daily bonus already claimed today");
+            break;
+          }
+          case "buy-miner": {
+            const rule = minerById(action.minerId);
+            if (!rule) throw new Error("Unknown miner");
+            const existingMiner = await tx.execute({
+              sql: "SELECT miner_id FROM miners WHERE tg_id = ? AND miner_id = ?",
+              args: [tg.id, action.minerId],
+            });
+            if (existingMiner.rows.length) throw new Error("You already own this miner");
+            const debit = await tx.execute({
+              sql: `UPDATE players
+                SET coins = coins - ?, owns_miner2 = CASE WHEN ? = 2 THEN 1 ELSE owns_miner2 END
+                WHERE tg_id = ? AND coins >= ?`,
+              args: [rule.cost, action.minerId, tg.id, rule.cost],
+            });
+            requireChanged(debit.rowsAffected, "Not enough coins");
+            await tx.execute({
+              sql: "INSERT INTO miners(tg_id, miner_id, started_at) VALUES (?, ?, ?)",
+              args: [tg.id, action.minerId, new Date().toISOString()],
+            });
+            break;
+          }
+          case "claim-miner": {
+            const rule = minerById(action.minerId);
+            if (!rule) throw new Error("Unknown miner");
+            const started = await tx.execute({
+              sql: "SELECT started_at FROM miners WHERE tg_id = ? AND miner_id = ?",
+              args: [tg.id, action.minerId],
+            });
+            if (!started.rows.length) throw new Error("You do not own this miner");
+            const startedAt = asText(asRow(started.rows[0])["started_at"]);
+            const now = Date.now();
+            if (!Number.isFinite(Date.parse(startedAt)) || Date.parse(startedAt) + rule.minutes * 60_000 > now) {
+              throw new Error("Mining is not finished yet");
+            }
+            const update = await tx.execute({
+              sql: "UPDATE miners SET started_at = ? WHERE tg_id = ? AND miner_id = ? AND started_at = ?",
+              args: [new Date(now).toISOString(), tg.id, action.minerId, startedAt],
+            });
+            requireChanged(update.rowsAffected, "Mining has already been claimed; refresh and try again");
+            const credit = await tx.execute({
+              sql: "UPDATE players SET balance_milli = balance_milli + ? WHERE tg_id = ?",
+              args: [rule.rewardMilli, tg.id],
+            });
+            requireChanged(credit.rowsAffected, "Player not found");
+            break;
+          }
+          case "donate": {
+            const update = await tx.execute({
+              sql: "UPDATE players SET coins = coins - 100, donated_coins = donated_coins + 100 WHERE tg_id = ? AND coins >= 100",
+              args: [tg.id],
+            });
+            requireChanged(update.rowsAffected, "You need 100 coins to donate");
+            break;
+          }
+          case "claim-referral": {
+            const friendResult = await tx.execute({
+              sql: "SELECT owns_miner2, referral_claimed FROM players WHERE tg_id = ? AND referred_by = ?",
+              args: [action.friendId, tg.id],
+            });
+            if (!friendResult.rows.length) throw new Error("Referral not found");
+            const friend = asRow(friendResult.rows[0]);
+            if (asNumber(friend["referral_claimed"]) === 1) throw new Error("Already claimed");
+            if (asNumber(friend["owns_miner2"]) !== 1) {
+              data = { ok: false, notEligible: true };
+              break;
+            }
+            const mark = await tx.execute({
+              sql: "UPDATE players SET referral_claimed = 1 WHERE tg_id = ? AND referred_by = ? AND referral_claimed = 0",
+              args: [action.friendId, tg.id],
+            });
+            requireChanged(mark.rowsAffected, "Already claimed");
+            const credit = await tx.execute({
+              sql: "UPDATE players SET coins = coins + 100 WHERE tg_id = ?",
+              args: [tg.id],
+            });
+            requireChanged(credit.rowsAffected, "Referrer not found");
+            break;
+          }
+        }
+
+        const actionResult: SyncActionResult = {
+          actionId: action.id,
+          type: action.type,
+          ok: true,
+          data,
+        };
+        await tx.execute({
+          sql: `INSERT INTO game_action_receipts(tg_id, action_id, action_json, result_json, created_at)
+            VALUES (?, ?, ?, ?, ?)`,
+          args: [tg.id, action.id, JSON.stringify(action), JSON.stringify(actionResult), new Date().toISOString()],
+        });
+        return actionResult;
+      });
+      if (action.type === "donate" && result.ok && !result.duplicate) leaderboardCache = null;
+      results.push(result);
+    } catch (error) {
+      results.push({
+        actionId: action.id,
+        type: action.type,
+        ok: false,
+        error: error instanceof Error ? error.message : "Action failed",
+      });
+    }
+  }
+
+  return { results, state: await snapshot(tg.id) };
 }

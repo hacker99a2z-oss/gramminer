@@ -69,6 +69,14 @@ CREATE TABLE IF NOT EXISTS telegram_file_cache (
   file_id TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS game_action_receipts (
+  tg_id INTEGER NOT NULL,
+  action_id TEXT NOT NULL,
+  action_json TEXT NOT NULL,
+  result_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (tg_id, action_id)
+);
 `;
 
 let client: Client | undefined;

@@ -10,9 +10,9 @@ services:
       - key: NODE_VERSION
         value: 22.18.0
       - key: FRONTEND_URL
-        sync: false
+        value: https://gramminer-c68.pages.dev
       - key: FRONTEND_URLS
-        sync: false
+        value: https://gramminer-c68.pages.dev
       - key: TURSO_DATABASE_URL
         sync: false
       - key: TURSO_AUTH_TOKEN
@@ -34,10 +34,14 @@ services:
       - key: PAYMENTS_PROOF_URL
         sync: false
       - key: PUBLIC_BACKEND_URL
-        value: https://gramminer-backend.onrender.com
+        sync: false
+      - key: EDGE_ONLY_API
+        sync: false
       - key: BOT_APP_URL
-        value: https://gramminer-nine.vercel.app
+        value: https://gramminer-c68.pages.dev
       - key: BOT_OFFICIAL_CHANNEL_URL
         sync: false
       - key: BOT_SUPPORT_GROUP_URL
         sync: false
+      - key: TELEGRAM_AUTO_CONFIGURE_WEBHOOK
+        value: "false"

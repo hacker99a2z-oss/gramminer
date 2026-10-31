@@ -67,3 +67,12 @@ CREATE TABLE IF NOT EXISTS locks (
   id TEXT PRIMARY KEY,
   until TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS game_action_receipts (
+  tg_id INTEGER NOT NULL,
+  action_id TEXT NOT NULL,
+  action_json TEXT NOT NULL,
+  result_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (tg_id, action_id)
+);

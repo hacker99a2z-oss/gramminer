@@ -1,125 +1,158 @@
-# Gram Miner — Cloudflare Pages + Workers
+# Gram Miner — Cloudflare CDN + Workers, Render for background operations
 
-## Architecture
+## The only two application platforms
 
-- **Frontend:** Cloudflare Pages serves the static Telegram Mini App.
-- **Game API:** Cloudflare Workers runs `backend/worker.ts`.
-- **Database:** Keep the existing Turso/libSQL database and all player balances. The Worker uses `@libsql/client/web`, the Workers-compatible HTTP client.
-- **TON payouts:** Keep the existing Node payout service on Render during this first-stage migration. The existing GitHub Actions payout schedule continues to call Render every 15 minutes. Do not set `PAYOUT_BACKEND_URL` to the Worker.
-- **Rollback:** Keep Render and the previous Vercel deployment available until all Worker and Telegram flows pass.
+1. **Cloudflare CDN + Pages + Workers:** serves the Telegram Mini App, terminates public API traffic at the edge, validates user actions, applies game rules, and reads/writes the existing Turso database.
+2. **Render:** stays as the private-in-purpose Node service for TON payout signing/batching, payout proof posting and the Telegram bot webhook handler.
 
-Normal game API calls go directly from the browser to the Worker by way of `VITE_BACKEND_URL`. The Pages Functions only proxy the AdsGram callback and expose the TonConnect manifest; they do not proxy ordinary game API requests.
+Turso remains the existing authoritative database. It is not a third application server. Do not create Deno Deploy, Supabase Functions, Appwrite Functions, Cloud Run, or a second backend for this architecture.
 
-## Important limits and cost
+## Request path
 
-Cloudflare Workers Free currently allows **100,000 requests per day** and **10 ms CPU time per HTTP invocation**. This is not enough for 200,000–300,000 daily active users if each user makes one or more API requests per day. The Workers Paid Standard plan starts at **$5/month**, includes 10 million requests/month and 30 million CPU milliseconds/month, and bills separately for usage above those allowances. Paid permits up to 5 minutes CPU per invocation (30 seconds by default). These are billing and runtime allowances, not a guarantee of a particular DAU or peak concurrency.
+- Static frontend, images, JS and CSS: Telegram Mini App → Cloudflare Pages CDN.
+- Game/API: Mini App → Cloudflare Worker → Telegram initData validation → existing Turso database.
+- Telegram webhook and scheduled payout calls: caller → Cloudflare Worker → fixed, allowlisted Render origin path.
+- TON wallet signing and payout confirmation: Render only. Do not put wallet mnemonic or TONCenter signing credentials in Cloudflare Worker secrets.
 
-Estimate real costs from measured API requests per active user, CPU time, Turso reads/writes and peak traffic. Review current official limits before launch:
-- https://developers.cloudflare.com/workers/platform/pricing/
-- https://developers.cloudflare.com/workers/platform/limits/
+The Worker proxies exactly two Render paths: `POST /api/telegram/webhook` and `GET /api/public/payout`. It is not an open URL proxy. The payout proxy validates the scheduled request with `PAYOUT_CRON_SECRET` before forwarding it to Render with an Authorization bearer header. All proxied responses are `no-store`.
 
-There is no free tier that guarantees 200,000–300,000 DAU without errors. Set billing alerts and rate controls before public launch.
+## Secure gameplay batch synchronization
 
-## 1. Create Worker from GitHub
+The Mini App now queues only command intent for these gameplay actions:
 
-1. Cloudflare Dashboard → **Workers & Pages** → **Create application**.
-2. Choose **Connect to Git** and connect `hacker99a2z-oss/gramminer`.
-3. Select branch `main`.
-4. Set the root directory to the repository root (`/`).
-5. Use repository `wrangler.jsonc`; entry point is `backend/worker.ts`.
-6. Set build command: `npm install --no-audit --no-fund && npm run build:worker`.
-7. If the dashboard asks for a deploy command, set `npx wrangler deploy`.
-8. Cloudflare will give a URL similar to `https://gramminer-backend.<account-subdomain>.workers.dev`.
+- daily bonus claim
+- miner purchase
+- miner reward claim
+- donation
+- referral reward claim
 
-To deploy locally from the repository root:
-```sh
-npm install
-npm run deploy:worker
-```
-Do not deploy until Worker variables and secrets are configured.
+It groups actions for up to 1.2 seconds, sends a checkpoint every 15 seconds while the app stays open, and sends a final best-effort batch using `sendBeacon`/keepalive when the page becomes hidden or closes. The local queue is persisted per Telegram account; Telegram initData itself is not stored in localStorage. The app retries unacknowledged commands after reopening.
 
-## 2. Worker variables and secrets
+The batch is capped at 5 commands to stay below the Workers Free per-invocation subrequest ceiling with headroom for Turso transactions. The server verifies Telegram initData, validates a strict schema, derives every coin debit/reward from server-side rules, checks ownership and eligibility, and writes each action in a Turso write transaction. A per-user action receipt makes retries idempotent: sending the same action ID again cannot credit/debit twice. The server returns the real database snapshot; browser balances are never accepted as input.
 
-Cloudflare Dashboard → Workers & Pages → `gramminer-backend` → **Settings → Variables and Secrets**.
+**Important browser limitation:** closing a WebView does not guarantee that JavaScript gets time to send a final network request. The design therefore does not rely on exit alone: it also persists the queue and checkpoints while the app is open. A user who force-kills the app while offline may not sync until reopening with a connection.
 
-Add these plain-text variables:
+Withdrawals, AdsGram session start/verification, and payout operations remain immediate server-verified flows. They are not deferred to an exit batch because they involve external providers, money movement, or time-sensitive state. Mining start time is assigned by the server when the batch commits, never from a client-supplied timestamp.
+
+## CDN caching policy
+
+| Data | Cache policy |
+|---|---|
+| Static Pages assets | Cloudflare Pages CDN |
+| Public leaderboard | Cloudflare edge cache for 15 seconds; stale-while-revalidate 30 seconds |
+| Player profile, coins, balance, miners | `no-store`; never shared-cache |
+| Buy/claim/donate/referral sync | `no-store`; POST only |
+| Withdrawal, AdsGram verification, Telegram webhook, payout | `no-store` |
+
+Never cache authenticated responses or any response that includes a player's private balance.
+
+## 1. Deploy the Worker
+
+Cloudflare Dashboard → **Workers & Pages** → create/connect the `hacker99a2z-oss/gramminer` repository.
+
+- Root directory: repository root.
+- Branch: `main` after the preview branch is verified.
+- Worker entrypoint: `backend/worker.ts`.
+- Build command: `npm install --no-audit --no-fund && npm run build:worker`.
+- Deploy command, if requested: `npx wrangler deploy`.
+- Worker name: `gramminer-backend`.
+
+The Worker is the public API entrypoint. Use its exact `workers.dev` URL or a custom hostname on a Cloudflare-managed zone. If using a custom hostname, keep the DNS record proxied through Cloudflare and attach the Worker route/custom domain in the Cloudflare dashboard.
+
+## 2. Cloudflare Worker environment
+
+Set plain-text variables:
 
 | Name | Value |
 |---|---|
-| `TURSO_DATABASE_URL` | Exact existing Turso URL from the current Render backend |
+| `RENDER_BACKEND_URL` | `https://gramminer-backend.onrender.com` |
 | `FRONTEND_URL` | `https://gramminer-c68.pages.dev` |
-| `FRONTEND_URLS` | Pages Production URL, Pages Preview URL and old Vercel origin, comma-separated |
+| `FRONTEND_URLS` | Production and preview Pages origins, comma-separated |
 | `BOT_APP_URL` | `https://gramminer-c68.pages.dev` |
-| `PAYMENT_PROOF_CHAT_ID` | Existing value, if used |
-| `PAYMENTS_PROOF_URL` | Existing value, if used |
+| `TURSO_DATABASE_URL` | Existing Turso URL |
+| `PAYMENT_PROOF_CHAT_ID` | Existing channel ID, if configured |
+| `PAYMENTS_PROOF_URL` | Existing public proof channel URL, if configured |
 
-Add these as **Secret** values (not plain text):
+Set these as **Worker Secrets**:
 
 - `TURSO_AUTH_TOKEN`
 - `TELEGRAM_BOT_TOKEN`
 - `ADSGRAM_REWARD_SECRET`
+- `PAYOUT_CRON_SECRET` — same random value currently configured on Render and as the GitHub Actions secret.
 
-Never put real secrets in source files, `wrangler.jsonc`, `VITE_*` variables, screenshots or chat. Do not add `TON_WALLET_MNEMONIC`, `TONCENTER_API_KEY`, or `PAYOUT_CRON_SECRET` to the Worker; keep them on the existing payout service.
+Do not put `TON_WALLET_MNEMONIC`, `TONCENTER_API_KEY`, or any wallet recovery phrase in Workers, Pages build variables, or browser code.
 
-The Wrangler config enables Node.js compatibility and `process.env` population so existing service modules can read Cloudflare-bound variables/secrets. The Worker database module imports `@libsql/client/web`, as required by Cloudflare's official Turso Workers guide.
+## 3. Cloudflare Pages frontend
 
-## 3. Connect Cloudflare Pages to the Worker
+Keep the existing Pages frontend project and connect its build to this repository's `frontend` directory.
 
-After the Worker deploys successfully, copy its exact `workers.dev` URL.
+Set in both Preview and Production:
 
-Cloudflare Pages → `gramminer-c68` → **Settings → Variables and Secrets**. Add in both Production and Preview:
+- `VITE_BACKEND_URL` = the exact Worker URL/custom hostname from step 1.
+- `BACKEND_URL` = the same Worker URL; Pages Functions use it for the AdsGram callback proxy.
 
-- `VITE_BACKEND_URL` = exact Worker URL.
-- `BACKEND_URL` = exact Worker URL.
+Do not configure `VITE_GAME_API_URL`, `VITE_ADS_API_URL`, `VITE_REFERRAL_API_URL`, `VITE_LEADERBOARD_API_URL`, or `VITE_FINANCE_API_URL`. Those separate-provider overrides have been removed. Redeploy Pages after changing `VITE_BACKEND_URL`, because it is embedded in the browser build.
 
-Redeploy Pages so `VITE_BACKEND_URL` is compiled into the browser bundle. Set the Worker `FRONTEND_URLS` variable to include:
-- `https://gramminer-c68.pages.dev`
-- `https://3f5ed6da.gramminer-c68.pages.dev`
-- The existing Vercel origin while rollback is required.
+## 4. Render configuration
 
-## 4. Health checks and smoke tests
+Keep the existing Render service `gramminer-backend` and its existing Turso database. Do not create a second Render service or database.
 
-- `GET /health`: Worker liveness check.
-- `GET /ready`: runs `SELECT 1` against Turso to verify connectivity.
+Keep these secrets on Render:
 
-Test the Preview Pages app before changing production:
-- Telegram initData validation and game load.
-- Miner purchase and claim with a test account.
-- Daily bonus with a test account.
-- Referral list and claim with test accounts.
-- AdsGram session start, provider callback and one-time reward credit.
-- Withdrawal request/status with a test account. Do not send a real TON payment during smoke tests.
-- Leaderboard and direct Pages routes (`/refer`, `/donate`, `/withdraw`).
-- Worker logs, browser console and Turso read/write usage.
+- `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`
+- `TELEGRAM_BOT_TOKEN`
+- `ADSGRAM_REWARD_SECRET` only if required by an existing direct/legacy callback path
+- `PAYOUT_CRON_SECRET`
+- `TON_WALLET_MNEMONIC`
+- `TONCENTER_API_KEY` (if used)
 
-Never run write-path load tests against real users or the production database. A read-only k6 script exists in `loadtest/leaderboard.js`; use it only against a staging Worker connected to a staging/test database:
-```sh
-k6 run -e BASE_URL=https://YOUR_STAGING_WORKER_URL -e CONFIRM_STAGING=yes loadtest/leaderboard.js
+Set `PUBLIC_BACKEND_URL` on Render to the exact Worker URL/custom hostname. Set `BOT_APP_URL` to `https://gramminer-c68.pages.dev`. After the Worker proxy and Render origin have been deployed, enable `TELEGRAM_AUTO_CONFIGURE_WEBHOOK=true` for one controlled restart so Telegram registers `/api/telegram/webhook` through Cloudflare. Then set it back to `false` or remove it.
+
+The Worker must have `RENDER_BACKEND_URL=https://gramminer-backend.onrender.com`. Telegram's webhook secret header is forwarded unchanged; Render still validates the Telegram webhook secret itself.
+
+AdsGram Reward URL should point to the Cloudflare Pages Function, which proxies to the Worker:
+
+```text
+https://gramminer-c68.pages.dev/api/public/adsgram/reward?key=YOUR_ADSGRAM_REWARD_SECRET&userid=[userId]
 ```
-It ramps to 50 virtual users and tests only the read-only leaderboard. It does not prove write-path, reward, withdrawal or 200,000–300,000 DAU capacity.
 
-## 5. Telegram, AdsGram and payout boundaries
+Keep the literal `[userId]` placeholder. The reward secret is verified by the Worker; never put it in frontend JavaScript or a `VITE_*` variable.
 
-- Telegram `/start` webhook remains on Render for this first stage. Do not change the Telegram webhook until Worker API, webhook signature and welcome behaviour are separately verified.
-- AdsGram reward URL should use the Pages proxy:
-  `https://gramminer-c68.pages.dev/api/public/adsgram/reward?key=YOUR_ADSGRAM_REWARD_SECRET&userid=[userId]`
-  Keep the literal `[userId]` placeholder and add the matching secret to the Worker.
-- GitHub Actions payout schedule continues calling the existing Render endpoint every 15 minutes. Keep `PAYOUT_BACKEND_URL` unset (so its Render default applies) or explicitly set it to the current Render service URL. Keep the existing `PAYOUT_CRON_SECRET` GitHub secret.
-- The Worker intentionally returns HTTP 503 from `/api/public/payout`. The Worker is not the payout executor. TON wallet signing, transfer construction and proof posting remain on the Node service. Do not send the wallet mnemonic to Cloudflare.
+## 5. Scheduled payouts through Cloudflare
 
-## 6. Rate controls, logs and production safety
+The GitHub Actions payout workflow should call the Worker URL, not the Render URL, so scheduled inbound requests also pass through Cloudflare:
 
-- Configure Cloudflare WAF/Rate Limiting for abusive traffic to `/api/game/*` and callback routes. Avoid blanket low thresholds that block normal gameplay.
-- Monitor Worker request count, CPU time, exceptions and subrequests.
-- Monitor Turso rows read/written, storage and query latency.
-- Monitor AdsGram callback failures and the Pending withdrawal backlog.
-- Configure billing alerts before moving to Paid.
-- All balance-changing actions continue to be validated and committed by the server; the browser is never the source of truth for coins or withdrawable balances.
+- Set repository variable `PAYOUT_BACKEND_URL` to `https://gramminer-c68.pages.dev`. The Pages Function proxies `/api/public/payout` to the Worker, which validates the cron bearer token and forwards to Render.
+- Keep repository secret `PAYOUT_CRON_SECRET` equal to the value on both Render and Worker.
+- The Worker verifies the bearer secret and forwards the request to Render. Render performs the payout lock, TON signing, transfer confirmation and proof posting.
 
-## 7. Rollback
+The Render origin remains directly addressable on its `onrender.com` hostname. After the Worker and Pages cutover has passed all smoke tests, set Render's `EDGE_ONLY_API=true` so direct requests to legacy `/api/game/*` and AdsGram reward routes are rejected. Leave this switch off until that cutover is complete, to preserve rollback. The payout secret must remain strong and must never appear in frontend code. The app itself must never call Render directly.
 
-If Worker API tests fail, change both Pages values back to:
-- `VITE_BACKEND_URL=https://gramminer-backend.onrender.com`
-- `BACKEND_URL=https://gramminer-backend.onrender.com`
+## 6. Security and cache controls
 
-Redeploy Pages. Keep Render online and the previous Vercel deployment available until the Worker path is stable. Do not change or migrate the existing Turso production database.
+- Worker verifies Telegram initData on every authenticated gameplay batch.
+- Every balance-changing action is calculated and committed server-side.
+- Batch IDs are idempotent per Telegram user and stored in Turso receipts.
+- Requests containing balance/profile state use `Cache-Control: no-store`.
+- Only public leaderboard data is cached at the Cloudflare edge.
+- Configure Cloudflare WAF/rate-limiting rules for the Worker hostname if it is attached to a Cloudflare-managed zone. Rate-limit suspicious repeated auth failures and abusive callback traffic; do not put a low blanket threshold on legitimate gameplay.
+- Keep Render's wallet secrets and payout executor separate from the Worker.
+- Do not load-test production balances. Use a separate staging Turso database and test Telegram account first.
+
+## 7. Required smoke tests before production cutover
+
+1. Open the Cloudflare Pages Preview Mini App inside Telegram.
+2. Confirm `GET /health` and `GET /ready` on the Worker.
+3. Buy a miner, claim an eligible miner, claim daily bonus, donate, and claim an eligible referral; verify the authoritative Turso snapshot matches.
+4. Repeat a batch request with the same action IDs and confirm the receipt marks duplicates without changing balances twice.
+5. Close the app with queued actions, reopen it, and confirm the persisted queue is replayed once.
+6. Confirm a forged action with an invalid miner ID, unknown referral, duplicate bonus, or insufficient coins cannot change balances.
+7. Verify AdsGram's server callback and withdrawal flow separately. Use test balances only; do not send real TON during smoke tests.
+8. Run a payout workflow manually with the staging wallet/database before production.
+9. Verify Telegram `/start` reaches Render through the Worker proxy and sends the welcome reply.\n10. Only after all preceding tests pass, set Render `EDGE_ONLY_API=true`; verify legacy Render game routes now return 403 while Worker game routes continue working.
+
+A successful CI build is not proof of 300,000 DAU capacity. Cloudflare Workers Free currently has a 100,000 request/day ceiling and a 10 ms CPU budget per HTTP invocation. One request per user per day at 300,000 DAU already exceeds that daily free request allowance. Measure API requests/user, database reads/writes, p95 latency, CPU, and peak concurrency before choosing a paid capacity plan.
+
+## Rollback
+
+If the Worker preview fails, revert only the Cloudflare Pages `VITE_BACKEND_URL`/ `BACKEND_URL` values to the currently working backend URL and redeploy Pages. Keep Render and the existing Turso database intact. Never delete production player or payout data during a rollback.
