@@ -36,7 +36,7 @@ const actionSchema = z.discriminatedUnion("type", [
   z.object({ id: z.string().uuid(), type: z.literal("donate") }).strict(),
   z.object({ id: z.string().uuid(), type: z.literal("claim-referral"), friendId: z.number().int().positive() }).strict(),
 ]);
-const MAX_BATCH = 20;
+const MAX_BATCH = 5;
 const BATCH_DELAY_MS = 1200;
 const CHECKPOINT_MS = 15000;
 const QUEUE_STORAGE_PREFIX = "gramminer:pending-game-actions:v1:";
@@ -211,7 +211,7 @@ function enqueueGameAction(
   return new Promise((resolve, reject) => {
     queue.push({ action: completeAction, waiters: [{ resolve, reject }] });
     persistQueue();
-    if (queue.length >= 10) {
+    if (queue.length >= MAX_BATCH) {
       void flushPendingGameActions(initData).catch((error: unknown) => {
         console.warn("[game-sync] Batch checkpoint failed; commands remain queued", error);
       });
