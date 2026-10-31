@@ -20,6 +20,10 @@ const postRoutes: Record<string, (body: unknown) => Promise<unknown>> = {
     return game.claimMiner(data.initData, data.minerId);
   },
   "/api/game/donate": async (body) => game.donate(withInit.parse(body).initData),
+  "/api/game/sync": async (body) => {
+    const data = z.object({ initData, actions: z.array(z.unknown()).min(1).max(20) }).parse(body);
+    return game.syncActions(data.initData, data.actions);
+  },
   "/api/game/referrals": async (body) => game.referrals(withInit.parse(body).initData),
   "/api/game/claim-referral": async (body) => {
     const data = z.object({ initData, friendId: z.number().int().positive() }).parse(body);
