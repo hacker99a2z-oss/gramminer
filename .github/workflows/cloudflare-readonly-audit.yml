@@ -20,42 +20,60 @@ jobs:
       CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CF_ACCOUNT_ID: ${{ inputs.account_id }}
     steps:
-      - name: Audit Cloudflare resources (GET only)
+      - name: Audit Cloudflare account inventory (GET only)
         shell: bash
         run: |
           set -euo pipefail
-          if [ -z "$CF_TOKEN" ]; then echo 'Missing CLOUDFLARE_API_TOKEN secret' >> "$GITHUB_STEP_SUMMARY"; exit 1; fi
-          if ! [[ "$CF_ACCOUNT_ID" =~ ^[a-fA-F0-9]{32}$ ]]; then echo 'Invalid account ID' >> "$GITHUB_STEP_SUMMARY"; exit 1; fi
+          if [ -z "$CF_TOKEN" ]; then echo 'ERROR: CLOUDFLARE_API_TOKEN missing' >> "$GITHUB_STEP_SUMMARY"; exit 1; fi
+          if ! [[ "$CF_ACCOUNT_ID" =~ ^[a-fA-F0-9]{32}$ ]]; then echo 'ERROR: invalid Account ID' >> "$GITHUB_STEP_SUMMARY"; exit 1; fi
           API='https://api.cloudflare.com/client/v4'
           AUTH="Authorization: Bearer $CF_TOKEN"
-          echo '# Gram Miner Cloudflare audit' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Read-only: this workflow uses GET requests only. Secret values are not printed.' >> "$GITHUB_STEP_SUMMARY"
+          echo '# Gram Miner Cloudflare account inventory' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Read-only audit: GET requests only. No secret values are printed.' >> "$GITHUB_STEP_SUMMARY"
           echo '## Token verification' >> "$GITHUB_STEP_SUMMARY"
-          curl -sS "$API/user/tokens/verify" -H "$AUTH" | jq -r 'if .success then "- Token status: `\(.result.status)`" else "- Token verification failed: `\([.errors[].message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
-          echo '## Pages project: gramminer-c68' >> "$GITHUB_STEP_SUMMARY"
-          curl -sS "$API/accounts/$CF_ACCOUNT_ID/pages/projects/gramminer-c68" -H "$AUTH" | jq -r 'if .success then "- Project: `\(.result.name)`\n- Production branch: `\(.result.production_branch // "unknown")`\n- Default domain: `\(.result.subdomain // "unknown")`\n- Git source: `\(.result.source.type // "unknown")`\n- Production variable names: `\(((.result.deployment_configs.production.env_vars // {}) | keys) | join(", "))`\n- Preview variable names: `\(((.result.deployment_configs.preview.env_vars // {}) | keys) | join(", "))`" else "- Pages API error: `\([.errors[].message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
-          echo '## Recent Pages production deployments' >> "$GITHUB_STEP_SUMMARY"
-          curl -sS "$API/accounts/$CF_ACCOUNT_ID/pages/projects/gramminer-c68/deployments?env=production&per_page=5" -H "$AUTH" | jq -r 'if .success then (.result[] | "- `\(.created_on // "unknown")` | status `\(.latest_stage.status // "unknown")` | branch `\(.deployment_trigger.metadata.branch // "unknown")` | URL `\(.url // "unknown")`") else "- Deployments API error: `\([.errors[].message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
-          echo '## Worker: gramminer-backend' >> "$GITHUB_STEP_SUMMARY"
-          curl -sS "$API/accounts/$CF_ACCOUNT_ID/workers/scripts" -H "$AUTH" | jq -r 'if .success then (if any(.result[]; .id == "gramminer-backend") then "- Worker script found" else "- Worker script NOT found" end) else "- Workers scripts API error: `\([.errors[].message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
-          curl -sS "$API/accounts/$CF_ACCOUNT_ID/workers/scripts/gramminer-backend/settings" -H "$AUTH" | jq -r 'if .success then "- Compatibility date: `\(.result.compatibility_date // "unknown")`\n- Bindings (names/types only): `\([.result.bindings[]? | "\(.name):\(.type)"] | join(", "))`" else "- Worker settings API error: `\([.errors[].message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
-          ROOT_SUB=$(curl -sS "$API/accounts/$CF_ACCOUNT_ID/workers/subdomain" -H "$AUTH")
-          SCRIPT_SUB=$(curl -sS "$API/accounts/$CF_ACCOUNT_ID/workers/scripts/gramminer-backend/subdomain" -H "$AUTH")
-          SUBDOMAIN=$(echo "$ROOT_SUB" | jq -r '.result.subdomain // empty')
-          ENABLED=$(echo "$SCRIPT_SUB" | jq -r '.result.enabled // false')
-          if [ -n "$SUBDOMAIN" ] && [ "$ENABLED" = true ]; then
-            WORKER_URL="https://gramminer-backend.$SUBDOMAIN.workers.dev"
-            echo "- workers.dev URL: $WORKER_URL" >> "$GITHUB_STEP_SUMMARY"
-            for endpoint in health ready; do
-              CODE=$(curl -sS -o /dev/null -w '%{http_code}' "$WORKER_URL/$endpoint" || true)
-              echo "- Worker /$endpoint: HTTP $CODE" >> "$GITHUB_STEP_SUMMARY"
-            done
-          else
-            echo '- Worker workers.dev URL is not enabled or account subdomain is unavailable.' >> "$GITHUB_STEP_SUMMARY"
+          TOKEN_INFO=$(curl -sS "$API/user/tokens/verify" -H "$AUTH")
+          echo "$TOKEN_INFO" | jq -r 'if .success then "- Token status: `\(.result.status)`" else "- Token API error: `\([.errors[]?.message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
+          echo '## Accessible Cloudflare accounts (if token permits)' >> "$GITHUB_STEP_SUMMARY"
+          ACCOUNTS=$(curl -sS "$API/accounts?per_page=50" -H "$AUTH")
+          echo "$ACCOUNTS" | jq -r 'if .success then (if (.result|length)==0 then "- No accounts returned" else (.result[] | "- `\(.name // "unnamed")` — `\(.id)`") end) else "- Account listing unavailable: `\([.errors[]?.message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
+          echo '## Pages projects in supplied account' >> "$GITHUB_STEP_SUMMARY"
+          PROJECTS=$(curl -sS "$API/accounts/$CF_ACCOUNT_ID/pages/projects?per_page=100" -H "$AUTH")
+          echo "$PROJECTS" | jq -r 'if .success then (if (.result|length)==0 then "- No Pages projects returned for this account" else (.result[] | "- Project: `\(.name)` | branch: `\(.production_branch // "unknown")` | subdomain: `\(.subdomain // "unknown")` | source: `\(.source.type // "unknown")`") end) else "- Pages list API error: `\([.errors[]?.message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
+          MATCH=$(echo "$PROJECTS" | jq -r 'if .success then [.result[]? | select(.name=="gramminer-c68")] | length else 0 end')
+          if [ "$MATCH" -gt 0 ]; then
+            echo '### Matching Pages project deployment details' >> "$GITHUB_STEP_SUMMARY"
+            DEPLOYS=$(curl -sS "$API/accounts/$CF_ACCOUNT_ID/pages/projects/gramminer-c68/deployments?env=production&per_page=5" -H "$AUTH")
+            echo "$DEPLOYS" | jq -r 'if .success then (.result[]? | "- `\(.created_on // "unknown")` | stage `\(.latest_stage.status // "unknown")` | branch `\(.deployment_trigger.metadata.branch // "unknown")` | URL `\(.url // "unknown")`") else "- Deployment API error: `\([.errors[]?.message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
           fi
-          echo '## Public Pages health' >> "$GITHUB_STEP_SUMMARY"
+          echo '## Worker scripts in supplied account' >> "$GITHUB_STEP_SUMMARY"
+          SCRIPTS=$(curl -sS "$API/accounts/$CF_ACCOUNT_ID/workers/scripts" -H "$AUTH")
+          echo "$SCRIPTS" | jq -r 'if .success then (if (.result|length)==0 then "- No Worker scripts returned for this account" else (.result[] | "- Script: `\(.id)` | compatibility: `\(.compatibility_date // "unknown")` | modified: `\(.modified_on // "unknown")`") end) else "- Worker scripts API error: `\([.errors[]?.message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
+          MATCH_WORKER=$(echo "$SCRIPTS" | jq -r 'if .success then [.result[]? | select(.id=="gramminer-backend")] | length else 0 end')
+          if [ "$MATCH_WORKER" -gt 0 ]; then
+            echo '### gramminer-backend binding names/types (values hidden)' >> "$GITHUB_STEP_SUMMARY"
+            SETTINGS=$(curl -sS "$API/accounts/$CF_ACCOUNT_ID/workers/scripts/gramminer-backend/settings" -H "$AUTH")
+            echo "$SETTINGS" | jq -r 'if .success then "- Bindings: `\([.result.bindings[]? | "\(.name):\(.type)"] | join(", "))`" else "- Settings API error: `\([.errors[]?.message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
+            echo '### workers.dev routing' >> "$GITHUB_STEP_SUMMARY"
+            ROOT_SUB=$(curl -sS "$API/accounts/$CF_ACCOUNT_ID/workers/subdomain" -H "$AUTH")
+            SCRIPT_SUB=$(curl -sS "$API/accounts/$CF_ACCOUNT_ID/workers/scripts/gramminer-backend/subdomain" -H "$AUTH")
+            SUBDOMAIN=$(echo "$ROOT_SUB" | jq -r '.result.subdomain // empty')
+            ENABLED=$(echo "$SCRIPT_SUB" | jq -r '.result.enabled // false')
+            if [ -n "$SUBDOMAIN" ] && [ "$ENABLED" = true ]; then
+              WORKER_URL="https://gramminer-backend.$SUBDOMAIN.workers.dev"
+              echo "- Worker URL: $WORKER_URL" >> "$GITHUB_STEP_SUMMARY"
+              for endpoint in health ready; do CODE=$(curl -sS -o /dev/null -w '%{http_code}' "$WORKER_URL/$endpoint" || true); echo "- /$endpoint: HTTP $CODE" >> "$GITHUB_STEP_SUMMARY"; done
+            else
+              echo '- workers.dev URL not enabled or subdomain unavailable' >> "$GITHUB_STEP_SUMMARY"
+            fi
+          else
+            echo '- Expected script gramminer-backend not present in supplied account' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo '## Public Pages hostname check' >> "$GITHUB_STEP_SUMMARY"
           PAGE_CODE=$(curl -sS -o /dev/null -w '%{http_code}' https://gramminer-c68.pages.dev/ || true)
-          echo "- Pages frontend: HTTP $PAGE_CODE" >> "$GITHUB_STEP_SUMMARY"
-          echo '## Security note' >> "$GITHUB_STEP_SUMMARY"
-          echo '- Cloudflare environment and secret values are not emitted. Only configuration key names and binding types are reported.' >> "$GITHUB_STEP_SUMMARY"
-          echo '- No deploy, update, delete, or other write API is called.' >> "$GITHUB_STEP_SUMMARY"
+          echo "- https://gramminer-c68.pages.dev/: HTTP $PAGE_CODE" >> "$GITHUB_STEP_SUMMARY"
+          echo '## Interpretation' >> "$GITHUB_STEP_SUMMARY"
+          echo '- If the Pages hostname returns HTTP 200 but its project is missing from the supplied account, the project likely belongs to another Cloudflare account or has a different project name.' >> "$GITHUB_STEP_SUMMARY"
+          echo '- This audit never deploys, edits, deletes, rotates or prints secret values.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Print audit summary to job log
+        if: always()
+        run: cat "$GITHUB_STEP_SUMMARY"
