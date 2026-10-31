@@ -95,7 +95,7 @@ The AdsGram server reward callback (`/api/public/adsgram/reward`) is configured 
 
 After changing any `VITE_*` value, redeploy Pages because these values are embedded at build time. Any additional API origin must allow the Pages production and preview origins in its CORS settings.
 
-## 4. Health checks and smoke tests
+## Deno game API (first isolated service)\n\nSee [DENO_GAME_API.md](./DENO_GAME_API.md) for the isolated Deno Deploy game-service entrypoint, environment variables, preview setup, and validation steps. Do not configure `VITE_GAME_API_URL` until the Deno preview has passed staging tests.\n\n## 4. Health checks and smoke tests
 
 - `GET /health`: Worker liveness check.
 - `GET /ready`: runs `SELECT 1` against Turso to verify connectivity.
