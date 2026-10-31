@@ -302,7 +302,7 @@ export async function getReferrals({ data }: Input<{ initData: string }>): Promi
 }
 
 export async function claimReferral({ data }: Input<{ initData: string; friendId: number }>): Promise<ReferralClaim> {
-  const input = z.object({ initData, friendId: z.number().int().positive() }).parse(data);
+  const input = z.object({ initData: init, friendId: z.number().int().positive() }).parse(data);
   const response = await runQueuedAction(input.initData, { type: "claim-referral", friendId: input.friendId });
   if (!response.result.ok) throw new Error(response.result.error ?? "Referral reward was rejected");
   if (response.result.data?.notEligible) return { ok: false, notEligible: true };
@@ -315,7 +315,7 @@ export async function getWithdrawalStatus({ data }: Input<{ initData: string }>)
 
 export async function requestWithdraw({ data }: Input<{ initData: string; milli: number; address: string }>): Promise<Snapshot> {
   const input = z.object({
-    initData,
+    initData: init,
     milli: z.number().int().min(30).max(1_000_000),
     address: z.string().min(40).max(80),
   }).parse(data);
@@ -324,7 +324,7 @@ export async function requestWithdraw({ data }: Input<{ initData: string; milli:
 
 export async function startAd({ data }: Input<{ initData: string; abandonSessionId?: string }>): Promise<{ sessionId: string; resumed: boolean }> {
   const input = z.object({
-    initData,
+    initData: init,
     abandonSessionId: z.string().regex(/^[a-f0-9]{32}$/).optional(),
   }).parse(data);
   return callBackend("/api/game/start-ad", input);
