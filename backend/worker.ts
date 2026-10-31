@@ -141,8 +141,20 @@ async function handle(request: Request, ctx: ExecutionContext): Promise<Response
       return json(request, path, 200, { ok: true, database: "connected" });
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Unknown database error";
-      console.error("[ready] Turso check failed:", reason);
-      return json(request, path, 503, { ok: false, database: "unavailable" });
+      const databaseUrlConfigured = Boolean(process.env["TURSO_DATABASE_URL"]);
+      const databaseTokenConfigured = Boolean(process.env["TURSO_AUTH_TOKEN"]);
+      const code = reason.includes("TURSO_DATABASE_URL is missing")
+        ? "missing_database_url"
+        : reason.includes("TURSO_AUTH_TOKEN is missing")
+          ? "missing_database_token"
+          : "database_connection_failed";
+      console.error("[ready] Turso check failed:", code, reason);
+      return json(request, path, 503, {
+        ok: false,
+        database: "unavailable",
+        reason: code,
+        configuration: { databaseUrlConfigured, databaseTokenConfigured },
+      });
     }
   }
 
