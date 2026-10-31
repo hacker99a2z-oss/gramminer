@@ -24,13 +24,31 @@ Deno 2 supports npm dependencies declared in `package.json`, Node built-in modul
 
 ## Deno Deploy setup
 
-Use the current Deno Deploy dashboard at https://console.deno.com (not the retired Deploy Classic dashboard).
+Use the current Deno Deploy platform at https://console.deno.com (not the retired Deploy Classic dashboard). The current dashboard's GitHub integration does not yet support monorepos, and this repository contains both `backend/` and `frontend/`. To avoid configuring the wrong app root, create this service using the Deno Deploy CLI from the repository root and use a local-source app:
 
-1. Create a new application and connect GitHub repository `hacker99a2z-oss/gramminer`.
-2. Select branch `architecture/service-api-routing` for an isolated preview. Do not select `main` for the first test.
-3. Set the entrypoint to `backend/deno/game-api.ts` and the working directory to the repository root.
-4. Ensure the build/install step installs dependencies from the root `package.json`. The repository's root `deno.json` uses `nodeModulesDir: "auto"`.
-5. Set the following runtime environment variables in the **Development/preview** context first:
+```sh
+deno deploy create . \
+  --org YOUR_DENO_ORG \
+  --app gramminer-game \
+  --source local \
+  --runtime-mode dynamic \
+  --entrypoint backend/deno/game-api.ts \
+  --working-directory . \
+  --install-command "deno install" \
+  --build-timeout 10 \
+  --build-memory-limit 1024 \
+  --region global
+```
+
+Authenticate with `deno deploy` when prompted. This creates the app definition; it does not send live traffic from the Mini App to Deno. On subsequent local deployments from the repository root, use:
+
+```sh
+deno deploy --org YOUR_DENO_ORG --app gramminer-game
+```
+
+Do not use `--prod` for the first staging deployment. Configure environment variables in the Deno Deploy app's **Development/preview** context first. The entrypoint is relative to the repository root, and `deno.json` sets `nodeModulesDir: "auto"` so dependencies from the root `package.json` are resolved.
+
+Set the following runtime environment variables in the **Development/preview** context first:
 
 | Name | Type | Value |
 |---|---|---|
@@ -62,7 +80,7 @@ The development task grants only environment and network permissions needed by t
 After Deno has passed preview tests, set the Cloudflare Pages **Preview** build variable:
 
 ```text
-VITE_GAME_API_URL=https://YOUR-DENO-PREVIEW-APP.deno.net
+VITE_GAME_API_URL=the exact preview URL shown by Deno Deploy
 ```
 
 Redeploy the Pages preview and test the complete flow again. Keep this variable unset in Production until preview verification is signed off. The frontend then falls back to `VITE_BACKEND_URL` for all other services.
