@@ -1,16 +1,25 @@
 # Gram Miner
 
-Gram Miner is a Telegram Mini App built with React, TanStack Start, TypeScript, Turso/libSQL, AdsGram, and TON Connect.
+Gram Miner is a Telegram Mini App built with React, TanStack Start, TypeScript, Cloudflare Pages/CDN, Cloudflare Workers, Turso/libSQL, AdsGram, and TON Connect.
+
+## Production architecture
+
+- **Cloudflare Pages/CDN** — serves the frontend app and static assets.
+- **Cloudflare Workers** — public game API, Telegram Mini App authentication, server-side game rules, and public leaderboard edge caching.
+- **Render** — Node service for Telegram Bot webhook handling, TON payout signing/batching, payout confirmation, and payment-proof messages.
+- **Turso** — the single authoritative database for user coins, withdrawable balances, miners, referrals, ad sessions, withdrawals, and payout records.
+
+The browser never decides balances or reward amounts. Gameplay actions are server-validated and committed to Turso. Render remains separate from the public game API and must retain wallet signing secrets; never expose these in frontend code or Cloudflare Pages variables.
 
 ## Repository structure
 
 - `frontend/` — browser UI, pages/routes, React components, Telegram WebApp helper, AdsGram client and TON Connect UI.
-- `backend/` — standalone Node.js API, game rules, Turso database operations, Telegram Bot API integration and TON payouts.
-- `backend/turso/schema.sql` — Turso database schema.
-- `scripts/migrate-supabase-to-turso.mjs` — one-time importer for existing Supabase PostgreSQL data.
-- Root `package.json` — backend dependencies and Render start/migration scripts.
-
-Lovable is not used by builds, runtime, API calls, error reporting, authentication or Telegram integration. Runtime game data is stored in Turso; Supabase is only a source for the optional one-time migration.
+- `backend/worker.ts` — Cloudflare Workers public game API.
+- `backend/server.ts` — Render Node service for Telegram webhook and payout processing.
+- `backend/lib/` — shared game rules, Telegram authentication, and Turso database operations.
+- `backend/turso/schema.sql` — Turso/libSQL schema.
+- `render.yaml` — existing Render web service Blueprint.
+- `wrangler.jsonc` — Cloudflare Worker configuration.
 
 ## Local development
 
@@ -23,7 +32,13 @@ npm install
 npm run dev
 ```
 
-Backend, from repository root:
+Worker/API dependencies, from repository root:
+```sh
+npm install
+npm run dev:worker
+```
+
+Render Node service, from repository root:
 ```sh
 npm install
 TURSO_DATABASE_URL=libsql://... TURSO_AUTH_TOKEN=... npm run start:api
@@ -31,9 +46,9 @@ TURSO_DATABASE_URL=libsql://... TURSO_AUTH_TOKEN=... npm run start:api
 
 ## Deployment
 
-- Cloudflare Pages Root Directory: `frontend`
-- Cloudflare Worker entrypoint: `backend/worker.ts`
-- Render Root Directory: repository root (background webhook and TON payout)
-- Render backend environment: `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, and the Telegram/AdsGram/TON secrets.
+- [Cloudflare Pages, Workers, cache rules, and API routing](./CLOUDFLARE_WORKERS.md)
+- [Render service setup, environment variables, Telegram webhook, and payout settings](./RENDER_SETUP.md)
+- [Step-by-step staging and production cutover checklist](./PRODUCTION_CUTOVER_CHECKLIST.md)
+- [Deployment overview](./DEPLOYMENT.md)
 
-See [CLOUDFLARE_WORKERS.md](./CLOUDFLARE_WORKERS.md) for the current Cloudflare CDN/Workers and Render deployment, secure batched actions, and staged cutover. [DEPLOYMENT.md](./DEPLOYMENT.md) is the short deployment entrypoint. Never commit `.env` files, Turso tokens, database passwords, bot tokens, callback secrets or wallet mnemonics.
+Never commit `.env` files, Turso tokens, database passwords, bot tokens, callback secrets, payout secrets, or wallet mnemonics.
