@@ -19,7 +19,7 @@ Install/authenticate the Turso CLI, then create a blank database (do not clone r
 turso auth login
 turso db create gramminer-staging
 turso db show gramminer-staging --url
-turso db tokens create gramminer-staging
+turso db tokens create gramminer-staging --expiration never
 turso db shell gramminer-staging
 ```
 
@@ -33,9 +33,10 @@ The staging schema has empty player/withdrawal data. Use only a Telegram test ac
 2. Worker name: `gramminer-backend`.
 3. Production branch: `main`; enable Preview Builds for non-production branches.
 4. Build command: `npm install --no-audit --no-fund && npm run build:worker`.
-5. Deploy command: `npx wrangler deploy` for production builds; use the dashboard's Worker Preview command for branch previews.
-6. Ensure the Worker uses `wrangler.jsonc` and `backend/worker.ts` as its entrypoint.
-7. Configure preview-specific variables/secrets (do not copy production Turso credentials into Preview):
+5. Production deploy command: `npx wrangler deploy`.
+6. Enable Preview Builds under **Settings → Build → Branch control**. Set the Preview command to `npx wrangler preview`; Preview builds must use their own staging variables/secrets rather than production values.
+7. Ensure the Worker uses `wrangler.jsonc` and `backend/worker.ts` as its entrypoint.
+8. Configure preview-specific variables/secrets (do not copy production Turso credentials into Preview):
 
 Plain-text preview variables:
 - `TURSO_DATABASE_URL` = staging database URL from step 1.
@@ -66,7 +67,7 @@ The existing Pages project should be Git-connected to `hacker99a2z-oss/gramminer
 - Production branch: `main`
 - Preview branch control: include `architecture/service-api-routing` (or enable PR previews).
 
-Pages Git integration creates a branch/PR preview URL without changing the production branch. After the preview exists, set these **Preview-only** variables:
+Pages Git integration creates a branch/PR preview URL without changing the production branch. In **Settings → Builds → Branch control**, keep `main` as the Production branch and enable Preview builds for `architecture/service-api-routing`. After the preview exists, set these **Preview-only** variables:
 
 - `VITE_BACKEND_URL` = exact Worker Preview URL from step 2.
 - `BACKEND_URL` = exact Worker Preview URL from step 2.
@@ -174,3 +175,14 @@ If any check fails, set `EDGE_ONLY_API=false` and restore Pages `VITE_BACKEND_UR
 - Open the preview inside Telegram and run the listed test account flows.
 
 Do not send any secrets, mnemonic words, API tokens, or database tokens into chat. Use dashboard Secret fields/password manager.
+
+
+## Official setup references
+
+- [Cloudflare Workers Git integration and Preview Builds](https://developers.cloudflare.com/workers/ci-cd/builds/git-integration/github-integration/)
+- [Cloudflare Workers Preview build branches](https://developers.cloudflare.com/workers/ci-cd/builds/build-branches/)
+- [Cloudflare Pages Git integration and pull-request previews](https://developers.cloudflare.com/pages/configuration/git-integration/github-integration/)
+- [Turso CLI: create database](https://docs.turso.tech/cli/db/create)
+- [Turso CLI: show database URL](https://docs.turso.tech/cli/db/show)
+- [Turso CLI: create database token](https://docs.turso.tech/cli/db/tokens/create)
+- [Render Free service limitations](https://render.com/docs/free)
