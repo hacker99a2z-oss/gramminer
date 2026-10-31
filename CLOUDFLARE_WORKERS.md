@@ -110,11 +110,19 @@ Set `PUBLIC_BACKEND_URL` on Render to the exact Worker URL/custom hostname. Set 
 
 The Worker must have `RENDER_BACKEND_URL=https://gramminer-backend.onrender.com`. Telegram's webhook secret header is forwarded unchanged; Render still validates the Telegram webhook secret itself.
 
+AdsGram Reward URL should point to the Cloudflare Pages Function, which proxies to the Worker:
+
+```text
+https://gramminer-c68.pages.dev/api/public/adsgram/reward?key=YOUR_ADSGRAM_REWARD_SECRET&userid=[userId]
+```
+
+Keep the literal `[userId]` placeholder. The reward secret is verified by the Worker; never put it in frontend JavaScript or a `VITE_*` variable.
+
 ## 5. Scheduled payouts through Cloudflare
 
 The GitHub Actions payout workflow should call the Worker URL, not the Render URL, so scheduled inbound requests also pass through Cloudflare:
 
-- Set repository variable `PAYOUT_BACKEND_URL` to `https://YOUR-WORKER-HOST`.
+- Set repository variable `PAYOUT_BACKEND_URL` to `https://gramminer-c68.pages.dev`. The Pages Function proxies `/api/public/payout` to the Worker, which validates the cron bearer token and forwards to Render.
 - Keep repository secret `PAYOUT_CRON_SECRET` equal to the value on both Render and Worker.
 - The Worker verifies the bearer secret and forwards the request to Render. Render performs the payout lock, TON signing, transfer confirmation and proof posting.
 
