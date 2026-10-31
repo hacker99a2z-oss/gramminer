@@ -15,12 +15,12 @@ permissions:
 jobs:
   audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     env:
       CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CF_ACCOUNT_ID: ${{ inputs.account_id }}
     steps:
-      - name: Audit Cloudflare account inventory (GET only)
+      - name: Inventory Cloudflare Pages and Workers (GET only)
         shell: bash
         run: |
           set -euo pipefail
@@ -29,51 +29,52 @@ jobs:
           API='https://api.cloudflare.com/client/v4'
           AUTH="Authorization: Bearer $CF_TOKEN"
           echo '# Gram Miner Cloudflare account inventory' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Read-only audit: GET requests only. No secret values are printed.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Read-only audit: GET requests only. Secret values are never printed.' >> "$GITHUB_STEP_SUMMARY"
           echo '## Token verification' >> "$GITHUB_STEP_SUMMARY"
-          TOKEN_INFO=$(curl -sS "$API/user/tokens/verify" -H "$AUTH")
-          echo "$TOKEN_INFO" | jq -r 'if .success then "- Token status: `\(.result.status)`" else "- Token API error: `\([.errors[]?.message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
-          echo '## Accessible Cloudflare accounts (if token permits)' >> "$GITHUB_STEP_SUMMARY"
-          ACCOUNTS=$(curl -sS "$API/accounts?per_page=50" -H "$AUTH")
-          echo "$ACCOUNTS" | jq -r 'if .success then (if (.result|length)==0 then "- No accounts returned" else (.result[] | "- `\(.name // "unnamed")` — `\(.id)`") end) else "- Account listing unavailable: `\([.errors[]?.message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
-          echo '## Pages projects in supplied account' >> "$GITHUB_STEP_SUMMARY"
-          PROJECTS=$(curl -sS "$API/accounts/$CF_ACCOUNT_ID/pages/projects?per_page=100" -H "$AUTH")
-          echo "$PROJECTS" | jq -r 'if .success then (if (.result|length)==0 then "- No Pages projects returned for this account" else (.result[] | "- Project: `\(.name)` | branch: `\(.production_branch // "unknown")` | subdomain: `\(.subdomain // "unknown")` | source: `\(.source.type // "unknown")`") end) else "- Pages list API error: `\([.errors[]?.message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
-          MATCH=$(echo "$PROJECTS" | jq -r 'if .success then [.result[]? | select(.name=="gramminer-c68")] | length else 0 end')
-          if [ "$MATCH" -gt 0 ]; then
-            echo '### Matching Pages project deployment details' >> "$GITHUB_STEP_SUMMARY"
-            DEPLOYS=$(curl -sS "$API/accounts/$CF_ACCOUNT_ID/pages/projects/gramminer-c68/deployments?env=production&per_page=5" -H "$AUTH")
-            echo "$DEPLOYS" | jq -r 'if .success then (.result[]? | "- `\(.created_on // "unknown")` | stage `\(.latest_stage.status // "unknown")` | branch `\(.deployment_trigger.metadata.branch // "unknown")` | URL `\(.url // "unknown")`") else "- Deployment API error: `\([.errors[]?.message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
+          curl -sS "$API/user/tokens/verify" -H "$AUTH" | jq -r 'if .success then "- Token status: `\(.result.status)`" else "- Token API error: `\([.errors[]?.message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
+          echo '## Pages projects (page 1, 10 per page)' >> "$GITHUB_STEP_SUMMARY"
+          PROJECTS=$(curl -sS "$API/accounts/$CF_ACCOUNT_ID/pages/projects?page=1&per_page=10" -H "$AUTH")
+          echo "$PROJECTS" | jq -r 'if .success then (if (.result|length)==0 then "- No Pages projects returned" else (.result[] | "- Project: `\(.name)` | branch: `\(.production_branch // "unknown")` | subdomain: `\(.subdomain // "unknown")` | source: `\(.source.type // "unknown")`") end) else "- Pages list API error: `\([.errors[]?.message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
+          if echo "$PROJECTS" | jq -e '.success == true' >/dev/null; then
+            while IFS= read -r PROJECT_NAME; do
+              [ -n "$PROJECT_NAME" ] || continue
+              echo "### Pages project details: $PROJECT_NAME" >> "$GITHUB_STEP_SUMMARY"
+              DETAIL=$(curl -sS "$API/accounts/$CF_ACCOUNT_ID/pages/projects/$PROJECT_NAME" -H "$AUTH")
+              echo "$DETAIL" | jq -r 'if .success then "- Production branch: `\(.result.production_branch // "unknown")`\n- Default subdomain: `\(.result.subdomain // "unknown")`\n- Custom domains: `\((.result.domains // []) | join(", "))`\n- Git source: `\(.result.source.type // "unknown")` / `\(.result.source.config.owner // "unknown")/\(.result.source.config.repo_name // "unknown")`\n- Production variable NAMES only: `\(((.result.deployment_configs.production.env_vars // {}) | keys) | join(", "))`\n- Preview variable NAMES only: `\(((.result.deployment_configs.preview.env_vars // {}) | keys) | join(", "))`" else "- Project details API error: `\([.errors[]?.message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
+              DEPLOYS=$(curl -sS "$API/accounts/$CF_ACCOUNT_ID/pages/projects/$PROJECT_NAME/deployments?env=production&page=1&per_page=5" -H "$AUTH")
+              echo "$DEPLOYS" | jq -r 'if .success then (.result[]? | "- Deployment `\(.created_on // "unknown")` | stage `\(.latest_stage.status // "unknown")` | branch `\(.deployment_trigger.metadata.branch // "unknown")` | URL `\(.url // "unknown")`") else "- Deployment API error: `\([.errors[]?.message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
+            done < <(echo "$PROJECTS" | jq -r '.result[]?.name // empty')
           fi
-          echo '## Worker scripts in supplied account' >> "$GITHUB_STEP_SUMMARY"
+          echo '## Worker scripts' >> "$GITHUB_STEP_SUMMARY"
           SCRIPTS=$(curl -sS "$API/accounts/$CF_ACCOUNT_ID/workers/scripts" -H "$AUTH")
-          echo "$SCRIPTS" | jq -r 'if .success then (if (.result|length)==0 then "- No Worker scripts returned for this account" else (.result[] | "- Script: `\(.id)` | compatibility: `\(.compatibility_date // "unknown")` | modified: `\(.modified_on // "unknown")`") end) else "- Worker scripts API error: `\([.errors[]?.message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
-          MATCH_WORKER=$(echo "$SCRIPTS" | jq -r 'if .success then [.result[]? | select(.id=="gramminer-backend")] | length else 0 end')
-          if [ "$MATCH_WORKER" -gt 0 ]; then
-            echo '### gramminer-backend binding names/types (values hidden)' >> "$GITHUB_STEP_SUMMARY"
-            SETTINGS=$(curl -sS "$API/accounts/$CF_ACCOUNT_ID/workers/scripts/gramminer-backend/settings" -H "$AUTH")
-            echo "$SETTINGS" | jq -r 'if .success then "- Bindings: `\([.result.bindings[]? | "\(.name):\(.type)"] | join(", "))`" else "- Settings API error: `\([.errors[]?.message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
-            echo '### workers.dev routing' >> "$GITHUB_STEP_SUMMARY"
-            ROOT_SUB=$(curl -sS "$API/accounts/$CF_ACCOUNT_ID/workers/subdomain" -H "$AUTH")
-            SCRIPT_SUB=$(curl -sS "$API/accounts/$CF_ACCOUNT_ID/workers/scripts/gramminer-backend/subdomain" -H "$AUTH")
-            SUBDOMAIN=$(echo "$ROOT_SUB" | jq -r '.result.subdomain // empty')
-            ENABLED=$(echo "$SCRIPT_SUB" | jq -r '.result.enabled // false')
-            if [ -n "$SUBDOMAIN" ] && [ "$ENABLED" = true ]; then
-              WORKER_URL="https://gramminer-backend.$SUBDOMAIN.workers.dev"
-              echo "- Worker URL: $WORKER_URL" >> "$GITHUB_STEP_SUMMARY"
-              for endpoint in health ready; do CODE=$(curl -sS -o /dev/null -w '%{http_code}' "$WORKER_URL/$endpoint" || true); echo "- /$endpoint: HTTP $CODE" >> "$GITHUB_STEP_SUMMARY"; done
-            else
-              echo '- workers.dev URL not enabled or subdomain unavailable' >> "$GITHUB_STEP_SUMMARY"
+          echo "$SCRIPTS" | jq -r 'if .success then (if (.result|length)==0 then "- No Worker scripts returned" else (.result[] | "- Script: `\(.id)` | compatibility: `\(.compatibility_date // "unknown")` | modified: `\(.modified_on // "unknown")`") end) else "- Workers scripts API error: `\([.errors[]?.message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
+          for SCRIPT_NAME in gramminer gramminer-backend; do
+            FOUND=$(echo "$SCRIPTS" | jq -r --arg name "$SCRIPT_NAME" 'if .success then ([.result[]? | select(.id==$name)] | length) else 0 end')
+            if [ "$FOUND" -gt 0 ]; then
+              echo "### Worker details: $SCRIPT_NAME" >> "$GITHUB_STEP_SUMMARY"
+              SETTINGS=$(curl -sS "$API/accounts/$CF_ACCOUNT_ID/workers/scripts/$SCRIPT_NAME/script-settings" -H "$AUTH")
+              echo "$SETTINGS" | jq -r 'if .success then "- Compatibility date: `\(.result.compatibility_date // "unknown")`\n- Binding names/types ONLY: `\([.result.bindings[]? | "\(.name):\(.type)"] | join(", "))`" else "- Script settings API error: `\([.errors[]?.message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
+              SCRIPT_SUB=$(curl -sS "$API/accounts/$CF_ACCOUNT_ID/workers/scripts/$SCRIPT_NAME/subdomain" -H "$AUTH")
+              ROOT_SUB=$(curl -sS "$API/accounts/$CF_ACCOUNT_ID/workers/subdomain" -H "$AUTH")
+              SUBDOMAIN=$(echo "$ROOT_SUB" | jq -r '.result.subdomain // empty')
+              ENABLED=$(echo "$SCRIPT_SUB" | jq -r '.result.enabled // false')
+              if [ -n "$SUBDOMAIN" ] && [ "$ENABLED" = true ]; then
+                WORKER_URL="https://$SCRIPT_NAME.$SUBDOMAIN.workers.dev"
+                echo "- workers.dev URL: $WORKER_URL" >> "$GITHUB_STEP_SUMMARY"
+                for endpoint in health ready; do CODE=$(curl -sS -o /dev/null -w '%{http_code}' "$WORKER_URL/$endpoint" || true); echo "- /$endpoint: HTTP $CODE" >> "$GITHUB_STEP_SUMMARY"; done
+              else
+                echo '- workers.dev URL not enabled or account subdomain unavailable' >> "$GITHUB_STEP_SUMMARY"
+              fi
+              WDEPLOYS=$(curl -sS "$API/accounts/$CF_ACCOUNT_ID/workers/scripts/$SCRIPT_NAME/deployments?page=1&per_page=5" -H "$AUTH")
+              echo "$WDEPLOYS" | jq -r 'if .success then (.result.deployments[]? | "- Worker deployment `\(.id)` | created `\(.created_on // "unknown")` | source `\(.source // "unknown")` | strategy `\(.strategy // "unknown")`") else "- Worker deployments API error: `\([.errors[]?.message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
             fi
-          else
-            echo '- Expected script gramminer-backend not present in supplied account' >> "$GITHUB_STEP_SUMMARY"
-          fi
+          done
           echo '## Public Pages hostname check' >> "$GITHUB_STEP_SUMMARY"
           PAGE_CODE=$(curl -sS -o /dev/null -w '%{http_code}' https://gramminer-c68.pages.dev/ || true)
           echo "- https://gramminer-c68.pages.dev/: HTTP $PAGE_CODE" >> "$GITHUB_STEP_SUMMARY"
-          echo '## Interpretation' >> "$GITHUB_STEP_SUMMARY"
-          echo '- If the Pages hostname returns HTTP 200 but its project is missing from the supplied account, the project likely belongs to another Cloudflare account or has a different project name.' >> "$GITHUB_STEP_SUMMARY"
-          echo '- This audit never deploys, edits, deletes, rotates or prints secret values.' >> "$GITHUB_STEP_SUMMARY"
+          echo '## Security' >> "$GITHUB_STEP_SUMMARY"
+          echo '- Only API metadata and configuration names/types are reported. No environment values, secret values, script source, or credentials are fetched.' >> "$GITHUB_STEP_SUMMARY"
+          echo '- No deploy, create, update, delete, or other write API is called.' >> "$GITHUB_STEP_SUMMARY"
       - name: Print audit summary to job log
         if: always()
         run: cat "$GITHUB_STEP_SUMMARY"
