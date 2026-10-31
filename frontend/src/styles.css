@@ -1,0 +1,142 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-display: "Unbounded", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-gold: var(--gold);
+  --color-gold-deep: var(--gold-deep);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+:root {
+  --radius: 1rem;
+  --background: oklch(0.12 0.005 70);
+  --foreground: oklch(0.97 0.01 85);
+  --card: oklch(0.17 0.008 70);
+  --card-foreground: oklch(0.97 0.01 85);
+  --popover: oklch(0.17 0.008 70);
+  --popover-foreground: oklch(0.97 0.01 85);
+  --primary: oklch(0.82 0.16 80);
+  --primary-foreground: oklch(0.16 0.02 70);
+  --secondary: oklch(0.22 0.01 70);
+  --secondary-foreground: oklch(0.95 0.01 85);
+  --muted: oklch(0.22 0.01 70);
+  --muted-foreground: oklch(0.68 0.02 80);
+  --accent: oklch(0.3 0.06 75);
+  --accent-foreground: oklch(0.92 0.12 85);
+  --destructive: oklch(0.63 0.22 27);
+  --destructive-foreground: oklch(0.98 0 0);
+  --success: oklch(0.78 0.17 150);
+  --gold: oklch(0.85 0.16 85);
+  --gold-deep: oklch(0.66 0.15 60);
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: oklch(0.82 0.16 80);
+
+  --gradient-gold: linear-gradient(135deg, oklch(0.9 0.15 92), oklch(0.78 0.17 70) 55%, oklch(0.62 0.16 50));
+  --gradient-card: linear-gradient(160deg, oklch(0.2 0.012 70), oklch(0.14 0.006 70));
+  --gradient-glow: radial-gradient(120% 80% at 50% -10%, oklch(0.75 0.16 75 / 0.28), transparent 60%);
+  --shadow-gold: 0 10px 30px -10px oklch(0.78 0.17 70 / 0.55);
+  --shadow-card: 0 1px 0 oklch(1 0 0 / 0.06) inset, 0 20px 40px -24px oklch(0 0 0 / 0.9);
+}
+
+@layer base {
+  * { border-color: var(--color-border); }
+  html, body { background-color: var(--color-background); }
+  body {
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    background-image: var(--gradient-glow);
+    background-repeat: no-repeat;
+    min-height: 100vh;
+  }
+  h1, h2, h3, .font-display { font-family: var(--font-display); }
+}
+
+@layer components {
+  .card-gm {
+    background: var(--gradient-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-2xl);
+    box-shadow: var(--shadow-card);
+  }
+  .card-gold-edge {
+    position: relative;
+    border: 1px solid oklch(0.82 0.16 80 / 0.35);
+    box-shadow: var(--shadow-card), 0 0 0 1px oklch(0.82 0.16 80 / 0.08), 0 0 40px -18px oklch(0.82 0.16 80 / 0.6);
+  }
+  .bg-gold-gradient { background: var(--gradient-gold); }
+  .text-gold-gradient {
+    background: var(--gradient-gold);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .btn-gold {
+    display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+    background: var(--gradient-gold);
+    color: var(--color-primary-foreground);
+    font-family: var(--font-display);
+    font-weight: 700;
+    border-radius: var(--radius-xl);
+    padding: 0.85rem 1rem;
+    box-shadow: var(--shadow-gold);
+    transition: transform 0.15s, filter 0.15s, opacity 0.15s;
+  }
+  .btn-gold:active { transform: scale(0.97); }
+  .btn-gold:disabled { opacity: 0.45; box-shadow: none; filter: grayscale(0.4); }
+  .btn-ghost-gm {
+    display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+    background: var(--color-secondary);
+    color: var(--color-foreground);
+    border: 1px solid var(--color-border);
+    font-weight: 700;
+    border-radius: var(--radius-xl);
+    padding: 0.7rem 1rem;
+    transition: transform 0.15s;
+  }
+  .btn-ghost-gm:active { transform: scale(0.97); }
+  .btn-ghost-gm:disabled { opacity: 0.5; }
+  .shine { position: relative; overflow: hidden; }
+  .shine::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(110deg, transparent 30%, oklch(1 0 0 / 0.35) 50%, transparent 70%);
+    transform: translateX(-100%);
+    animation: shine 3.2s infinite;
+  }
+  .coin-spin { animation: coin-float 3s ease-in-out infinite; }
+  .mining-pulse { animation: pulse-glow 1.6s ease-in-out infinite; }
+}
+
+@keyframes shine { 60%, 100% { transform: translateX(100%); } }
+@keyframes coin-float { 0%, 100% { transform: translateY(0) rotate(-6deg); } 50% { transform: translateY(-4px) rotate(6deg); } }
+@keyframes pulse-glow { 0%, 100% { filter: drop-shadow(0 0 0 oklch(0.82 0.16 80 / 0)); } 50% { filter: drop-shadow(0 0 14px oklch(0.82 0.16 80 / 0.8)); } }
