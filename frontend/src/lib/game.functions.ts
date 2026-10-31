@@ -78,7 +78,17 @@ function activateQueue(initData: string): number {
   const userId = getTelegramUserId(initData);
   currentInitData = initData;
   if (queueUserId !== userId) {
-    if (flushTimer) clearTimeout(flushTimer);
+    // Never switch the active account while its request or UI action promises
+    // are still in flight. Persisted, unacknowledged commands are scoped to
+    // their original Telegram user and may be resumed after a full WebView reload.
+    if (inFlight || queue.some((item) => item.waiters.length > 0)) {
+      throw new Error("A previous Telegram account still has pending actions. Close and reopen Gram Miner to switch accounts safely.");
+    }
+    if (queueUserId !== null) persistQueue();
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = undefined;
+    }
     queueUserId = userId;
     queue = [];
     if (typeof window !== "undefined") {
@@ -140,7 +150,7 @@ async function sendActionBatch(initData: string, batch: PendingAction[]): Promis
     actions: batch.map((item) => item.action),
   });
   const results = new Map(response.results.map((result) => [result.actionId, result]));
-  const completed = new Set(batch.map((item) => item.action.id));
+  const completed = new Set(batch.filter((item) => results.has(item.action.id)).map((item) => item.action.id));
   queue = queue.filter((item) => !completed.has(item.action.id));
   persistQueue();
   stateListener?.(response.state);
@@ -148,7 +158,8 @@ async function sendActionBatch(initData: string, batch: PendingAction[]): Promis
     const result = results.get(item.action.id);
     if (!result) {
       const error = new Error("The server did not acknowledge a queued command. It remains saved for retry.");
-      item.waiters.forEach((waiter) => waiter.reject(error));
+      const waiters = item.waiters.splice(0);
+      waiters.forEach((waiter) => waiter.reject(error));
       continue;
     }
     item.waiters.forEach((waiter) => waiter.resolve({ state: response.state, result }));
@@ -195,7 +206,7 @@ function enqueueGameAction(
   initData: string,
   action: Omit<GameAction, "id">,
 ): Promise<{ state: Snapshot; result: GameActionResult }> {
-  const userId = activateQueue(initData);
+  activateQueue(initData);
   const completeAction = actionSchema.parse({ ...action, id: crypto.randomUUID() }) as GameAction;
   return new Promise((resolve, reject) => {
     queue.push({ action: completeAction, waiters: [{ resolve, reject }] });
@@ -207,7 +218,6 @@ function enqueueGameAction(
     } else {
       scheduleBatch(initData);
     }
-    if (queueUserId !== userId) reject(new Error("Telegram account changed. Reopen the app."));
   });
 }
 
