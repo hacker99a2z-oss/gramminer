@@ -47,6 +47,8 @@ let checkpointTimer: ReturnType<typeof setInterval> | undefined;
 let inFlight: Promise<void> | null = null;
 let currentInitData: string | null = null;
 let stateListener: ((state: Snapshot) => void) | null = null;
+let lastBeaconPayload = "";
+let lastBeaconAt = 0;
 
 function getTelegramUserId(initData: string): number {
   try {
@@ -225,6 +227,9 @@ export function flushPendingGameActionsWithBeacon(initData: string): void {
       initData,
       actions: queue.slice(0, MAX_BATCH).map((item) => item.action),
     });
+    if (payload === lastBeaconPayload && Date.now() - lastBeaconAt < 1500) return;
+    lastBeaconPayload = payload;
+    lastBeaconAt = Date.now();
     const blob = new Blob([payload], { type: "text/plain;charset=UTF-8" });
     const accepted = navigator.sendBeacon?.(API_BASE_URL + "/api/game/sync", blob) ?? false;
     if (!accepted) {
