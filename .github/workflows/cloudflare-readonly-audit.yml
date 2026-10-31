@@ -1,0 +1,266 @@
+name: Cloudflare read-only audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      account_id:
+        description: "Optional Cloudflare Account ID (only needed if the token cannot list accounts or you have multiple accounts)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Inspect Gram Miner Cloudflare resources (read-only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: \${{ inputs.account_id || vars.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Read Cloudflare metadata and run public health checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import json
+          import os
+          import re
+          import urllib.error
+          import urllib.request
+          from datetime import datetime, timezone
+
+          API = "https://api.cloudflare.com/client/v4"
+          TOKEN = os.environ.get("CLOUDFLARE_API_TOKEN", "").strip()
+          ACCOUNT_ID = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "").strip()
+          PAGES_PROJECT = "gramminer-c68"
+          WORKER_NAME = "gramminer-backend"
+          lines = [
+              "# Gram Miner — Cloudflare read-only audit",
+              "",
+              f"- Checked at: {datetime.now(timezone.utc).isoformat()}",
+              "- Mode: read-only; this workflow only sends HTTP GET requests.",
+              "- Secret values are never requested or printed. Only variable/binding names and types may be reported.",
+              "",
+          ]
+
+          def add(text=""):
+              lines.append(str(text))
+
+          def api_get(path):
+              req = urllib.request.Request(
+                  API + path,
+                  headers={
+                      "Authorization": "Bearer " + TOKEN,
+                      "Accept": "application/json",
+                      "User-Agent": "gramminer-cloudflare-readonly-audit",
+                  },
+                  method="GET",
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=25) as response:
+                      body = response.read()
+                      return response.status, json.loads(body.decode("utf-8"))
+              except urllib.error.HTTPError as exc:
+                  try:
+                      payload = json.loads(exc.read().decode("utf-8"))
+                  except Exception:
+                      payload = {}
+                  messages = [
+                      item.get("message", "Cloudflare API error")
+                      for item in payload.get("errors", [])
+                      if isinstance(item, dict)
+                  ]
+                  return exc.code, {"errors": messages}
+              except Exception as exc:
+                  return 0, {"errors": [type(exc).__name__ + ": " + str(exc)]}
+
+          def api_result(label, path):
+              status, payload = api_get(path)
+              if status == 200 and payload.get("success", True):
+                  add(f"- ✅ {label}: API access OK")
+                  return payload.get("result")
+              detail = "; ".join(str(x) for x in payload.get("errors", [])) or "No response details"
+              if TOKEN:
+                  detail = detail.replace(TOKEN, "[redacted]")
+              add(f"- ⚠️ {label}: HTTP {status or 'network error'} — {detail}")
+              return None
+
+          def public_get(label, url):
+              if not url:
+                  add(f"- ⚠️ {label}: URL unavailable")
+                  return
+              req = urllib.request.Request(
+                  url,
+                  headers={"User-Agent": "gramminer-cloudflare-readonly-audit"},
+                  method="GET",
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=20) as response:
+                      add(f"- {'✅' if 200 <= response.status < 400 else '⚠️'} {label}: HTTP {response.status} — {url}")
+              except urllib.error.HTTPError as exc:
+                  add(f"- ⚠️ {label}: HTTP {exc.code} — {url}")
+              except Exception as exc:
+                  add(f"- ⚠️ {label}: {type(exc).__name__} — {url}")
+
+          if not TOKEN:
+              add("## ❌ Missing GitHub secret")
+              add("The repository secret CLOUDFLARE_API_TOKEN was not available to this workflow.")
+          else:
+              verify = api_result("API token verification", "/user/tokens/verify")
+              if isinstance(verify, dict):
+                  add(f"  - Token status: **{verify.get('status', 'unknown')}**")
+                  add(f"  - Token name: **{verify.get('name', 'not returned')}**")
+
+              if not ACCOUNT_ID:
+                  accounts = api_result("Account discovery", "/accounts?per_page=50")
+                  if isinstance(accounts, list) and len(accounts) == 1:
+                      ACCOUNT_ID = str(accounts[0].get("id", ""))
+                      add(f"  - Found one account: **{accounts[0].get('name', 'unnamed')}**")
+                  elif isinstance(accounts, list) and len(accounts) > 1:
+                      add("  - Multiple accounts were returned. Run this workflow again and enter the intended Account ID in the account_id input.")
+                      for account in accounts:
+                          add(f"    - **{account.get('name', 'unnamed')}** — {account.get('id', 'ID not returned')}")
+                  elif isinstance(accounts, list):
+                      add("  - No Cloudflare accounts were returned for this token.")
+                  else:
+                      add("  - Account discovery was unavailable. Run again with the Account ID in the account_id input, or add repository variable CLOUDFLARE_ACCOUNT_ID.")
+
+              if ACCOUNT_ID:
+                  if not re.fullmatch(r"[A-Fa-f0-9]{32}", ACCOUNT_ID):
+                      add("- ❌ Account ID format is invalid; it should be 32 hexadecimal characters.")
+                  else:
+                      add("")
+                      add(f"## Cloudflare account {ACCOUNT_ID}")
+                      projects = api_result(
+                          "Pages projects list",
+                          f"/accounts/{ACCOUNT_ID}/pages/projects?per_page=100",
+                      )
+                      project = None
+                      if isinstance(projects, list):
+                          project = next(
+                              (item for item in projects if item.get("name") == PAGES_PROJECT),
+                              None,
+                          )
+                          if project:
+                              add(f"- ✅ Pages project {PAGES_PROJECT} exists")
+                              add(f"  - Production branch: **{project.get('production_branch', 'not returned')}**")
+                              add(f"  - Default subdomain: **{project.get('subdomain', 'not returned')}**")
+                              add(f"  - Source type: **{(project.get('source') or {}).get('type', 'not returned')}**")
+                              domains = project.get("domains") or []
+                              add("  - Custom domains: " + (", ".join(str(d) for d in domains) if domains else "none returned"))
+                              configs = project.get("deployment_configs") or {}
+                              for env_name in ("production", "preview"):
+                                  env_cfg = configs.get(env_name) or {}
+                                  env_vars = env_cfg.get("env_vars") or {}
+                                  names = sorted(env_vars.keys()) if isinstance(env_vars, dict) else []
+                                  add(f"  - {env_name.title()} environment variable names: " + (", ".join(names) if names else "none returned"))
+                              deployments = api_result(
+                                  "Pages production deployments",
+                                  f"/accounts/{ACCOUNT_ID}/pages/projects/{PAGES_PROJECT}/deployments?env=production&per_page=5",
+                              )
+                              if isinstance(deployments, list):
+                                  for deployment in deployments[:5]:
+                                      trigger = deployment.get("deployment_trigger") or {}
+                                      metadata = trigger.get("metadata") or {}
+                                      stage = deployment.get("latest_stage") or {}
+                                      add(
+                                          f"  - Deployment: {deployment.get('id', 'unknown')} "
+                                          f"| status {stage.get('status', deployment.get('status', 'unknown'))} "
+                                          f"| branch {metadata.get('branch', 'not returned')} "
+                                          f"| commit {metadata.get('commit_hash', 'not returned')} "
+                                          f"| URL {deployment.get('url', 'not returned')}"
+                                      )
+                          else:
+                              add(f"- ⚠️ Pages project {PAGES_PROJECT} was not found in this account.")
+                      public_get("Pages live site", f"https://{PAGES_PROJECT}.pages.dev/")
+
+                      scripts = api_result(
+                          "Workers scripts list",
+                          f"/accounts/{ACCOUNT_ID}/workers/scripts?per_page=100",
+                      )
+                      worker = None
+                      if isinstance(scripts, list):
+                          worker = next(
+                              (item for item in scripts if item.get("id") == WORKER_NAME or item.get("name") == WORKER_NAME),
+                              None,
+                          )
+                          if worker:
+                              add(f"- ✅ Worker {WORKER_NAME} exists")
+                              for key in ("created_on", "modified_on", "compatibility_date", "usage_model", "last_deployed_from"):
+                                  if worker.get(key) is not None:
+                                      add(f"  - {key}: **{worker.get(key)}**")
+                              settings = api_result(
+                                  "Worker version settings",
+                                  f"/accounts/{ACCOUNT_ID}/workers/scripts/{WORKER_NAME}/settings",
+                              )
+                              if isinstance(settings, dict):
+                                  bindings = settings.get("bindings") or []
+                                  safe_bindings = []
+                                  for binding in bindings:
+                                      if isinstance(binding, dict):
+                                          # Deliberately omit every binding value, including plain text and secrets.
+                                          safe_bindings.append(f"{binding.get('name', 'unnamed')} ({binding.get('type', 'unknown type')})")
+                                  add("  - Binding names/types: " + (", ".join(safe_bindings) if safe_bindings else "none returned"))
+                              subdomain = api_result(
+                                  "Account workers.dev subdomain",
+                                  f"/accounts/{ACCOUNT_ID}/workers/subdomain",
+                              )
+                              script_subdomain = api_result(
+                                  "Worker workers.dev availability",
+                                  f"/accounts/{ACCOUNT_ID}/workers/scripts/{WORKER_NAME}/subdomain",
+                              )
+                              worker_url = None
+                              if isinstance(subdomain, dict) and subdomain.get("subdomain"):
+                                  enabled = isinstance(script_subdomain, dict) and script_subdomain.get("enabled") is True
+                                  worker_url = f"https://{WORKER_NAME}.{subdomain['subdomain']}.workers.dev"
+                                  add(f"  - workers.dev enabled: **{enabled}**")
+                                  add(f"  - Expected Worker URL: {worker_url}")
+                              deployments = api_result(
+                                  "Worker deployments",
+                                  f"/accounts/{ACCOUNT_ID}/workers/scripts/{WORKER_NAME}/deployments",
+                              )
+                              if isinstance(deployments, list):
+                                  for deployment in deployments[:5]:
+                                      metadata = deployment.get("metadata") or {}
+                                      add(
+                                          f"  - Worker deployment {deployment.get('id', 'unknown')} "
+                                          f"| created {metadata.get('created_on', deployment.get('created_on', 'not returned'))} "
+                                          f"| source {metadata.get('source', 'not returned')}"
+                                      )
+                              if worker_url:
+                                  public_get("Worker /health", worker_url + "/health")
+                                  public_get("Worker /ready", worker_url + "/ready")
+                          else:
+                              add(f"- ⚠️ Worker {WORKER_NAME} was not found in this account.")
+                      if worker is None:
+                          add("")
+                          add("**Worker URL was not generated because the Worker could not be confirmed.**")
+              else:
+                  add("")
+                  add("## Account ID required")
+                  add("No account-specific audit was run. Provide the Cloudflare Account ID as workflow input account_id or repository variable CLOUDFLARE_ACCOUNT_ID.")
+
+          add("")
+          add("## Permission guide")
+          add("- Core checks: Account Settings Read (account discovery), Cloudflare Pages Read, and Workers Scripts Read.")
+          add("- All checks are GET-only. This workflow does not deploy, edit, delete, rotate, or reveal secrets.")
+          report = "\n".join(lines) + "\n"
+          with open("cloudflare-audit.md", "w", encoding="utf-8") as f:
+              f.write(report)
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary_path:
+              with open(summary_path, "a", encoding="utf-8") as f:
+                  f.write(report)
+          print(report)
+          PY
+
+      - name: Upload audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: gramminer-cloudflare-audit
+          path: cloudflare-audit.md
+          if-no-files-found: error
+          retention-days: 14
