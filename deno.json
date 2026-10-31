@@ -1,8 +1,0 @@
-{
-  "nodeModulesDir": "auto",
-  "tasks": {
-    "game-api:dev": "deno run --watch --allow-env --allow-net backend/deno/game-api.ts",
-    "game-api:check": "deno check backend/deno/game-api.ts backend/deno/game-api-handler.ts backend/deno/game-api.test.ts",
-    "game-api:test": "deno test --allow-env backend/deno/game-api.test.ts"
-  }
-}
