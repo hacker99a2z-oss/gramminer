@@ -52,7 +52,7 @@ jobs:
             FOUND=$(echo "$SCRIPTS" | jq -r --arg name "$SCRIPT_NAME" 'if .success then ([.result[]? | select(.id==$name)] | length) else 0 end')
             if [ "$FOUND" -gt 0 ]; then
               echo "### Worker details: $SCRIPT_NAME" >> "$GITHUB_STEP_SUMMARY"
-              SETTINGS=$(curl -sS "$API/accounts/$CF_ACCOUNT_ID/workers/scripts/$SCRIPT_NAME/script-settings" -H "$AUTH")
+              SETTINGS=$(curl -sS "$API/accounts/$CF_ACCOUNT_ID/workers/scripts/$SCRIPT_NAME/settings" -H "$AUTH")
               echo "$SETTINGS" | jq -r 'if .success then "- Compatibility date: `\(.result.compatibility_date // "unknown")`\n- Binding names/types ONLY: `\([.result.bindings[]? | "\(.name):\(.type)"] | join(", "))`" else "- Script settings API error: `\([.errors[]?.message] | join("; "))`" end' >> "$GITHUB_STEP_SUMMARY"
               SCRIPT_SUB=$(curl -sS "$API/accounts/$CF_ACCOUNT_ID/workers/scripts/$SCRIPT_NAME/subdomain" -H "$AUTH")
               ROOT_SUB=$(curl -sS "$API/accounts/$CF_ACCOUNT_ID/workers/subdomain" -H "$AUTH")
