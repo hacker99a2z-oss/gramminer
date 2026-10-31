@@ -21,7 +21,7 @@ const postRoutes: Record<string, (body: unknown) => Promise<unknown>> = {
   },
   "/api/game/donate": async (body) => game.donate(withInit.parse(body).initData),
   "/api/game/sync": async (body) => {
-    const data = z.object({ initData, actions: z.array(z.unknown()).min(1).max(20) }).parse(body);
+    const data = z.object({ initData, actions: z.array(z.unknown()).min(1).max(5) }).parse(body);
     return game.syncActions(data.initData, data.actions);
   },
   "/api/game/referrals": async (body) => game.referrals(withInit.parse(body).initData),
