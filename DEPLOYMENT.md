@@ -1,14 +1,24 @@
-# Gram Miner deployment entrypoint
+# Gram Miner deployment
 
-The current supported deployment uses **Cloudflare Pages/CDN + Cloudflare Workers** for the Mini App and all user-facing game API requests, with the existing **Render** service reserved for Telegram webhook handling and TON payout execution.
+The current production architecture is **Cloudflare Pages/CDN + Cloudflare Workers + Render + the existing Turso database**.
 
-Follow [CLOUDFLARE_WORKERS.md](./CLOUDFLARE_WORKERS.md) for the only current deployment procedure, environment variables, CDN cache policy, secure action batching, Render proxy routing, staged cutover and rollback.
+Use the current guides below:
 
-Do not follow older Vercel, Deno Deploy, Supabase Functions, Appwrite Functions, Cloud Run, or multi-backend API-routing instructions for the current architecture.
+1. [Cloudflare Pages and Workers deployment](./CLOUDFLARE_WORKERS.md) — frontend hosting, public game API, Worker variables/secrets, cache policy, webhook and payout proxy routing.
+2. [Render setup](./RENDER_SETUP.md) — the existing `gramminer-backend` service, required Node commands, Telegram bot webhook, TON wallet secrets, and payout schedule.
+3. [Production cutover checklist](./PRODUCTION_CUTOVER_CHECKLIST.md) — staging database, preview deployments, smoke tests, production environment and rollback sequence.
 
-## Security rules
+## Service responsibility summary
 
-- Turso remains the only source of truth for player coins, withdrawable balances, miners, referrals and withdrawals.
-- The browser submits action intent only. The server computes and validates all values.
-- Do not put Telegram bot tokens, AdsGram callback secrets, payout secrets, TONCenter credentials or wallet mnemonics in frontend build variables.
-- Do not enable Render `EDGE_ONLY_API=true` until the Cloudflare Worker and Pages preview flows have passed the documented smoke tests.
+| Service | Responsibility |
+|---|---|
+| Cloudflare Pages/CDN | Frontend app and static assets |
+| Cloudflare Workers | Public game API, auth, validation, rate controls, public leaderboard cache |
+| Render Node service | Telegram webhook, TON payout executor, proof posting |
+| Turso | Authoritative player and payout database |
+
+Do not create Deno Deploy, Supabase Edge Functions, Appwrite Functions, Cloud Run, another backend, or a second game database for this architecture.
+
+Never put Turso tokens, Telegram bot tokens, AdsGram/payout secrets, TONCenter signing keys or wallet mnemonics in frontend code or `VITE_*` variables. Keep wallet signing material on Render only.
+
+Render is connected to `main` with Auto Deploy enabled. Changes to the Render service's runtime code can restart the live backend, so follow the staging and smoke-test checklist before changing production settings.
