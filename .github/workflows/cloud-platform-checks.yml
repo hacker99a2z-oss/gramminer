@@ -20,6 +20,7 @@ on:
       - ".dockerignore"
       - "package.json"
       - "wrangler.jsonc"
+      - "deno.json"
       - "backend/**"
       - "frontend/**"
       - "*.md"
