@@ -156,6 +156,17 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     return;
   }
 
+  // Once the Cloudflare Worker is live, stop clients from bypassing the edge
+  // and hitting the legacy Render game routes directly. Keep this switch off
+  // until the Pages/Worker cutover has passed its smoke tests.
+  if (
+    process.env["EDGE_ONLY_API"] === "true" &&
+    (url.pathname.startsWith("/api/game/") || url.pathname === "/api/public/adsgram/reward")
+  ) {
+    text(res, 403, "Use the Cloudflare API endpoint");
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/api/game/leaderboard") {
     json(res, 200, await game.leaderboard());
     return;
