@@ -97,7 +97,11 @@ Before enabling the new payout cron: back up Turso and reconcile any old sending
 
 ## CI and tests
 
-GitHub Actions runs backend TypeScript checks and tests, then frontend Vite build (which regenerates the TanStack route tree), typecheck, tests and lint. Dependency lockfiles are not yet committed; generate and commit them before treating installs as fully reproducible.
+GitHub Actions uses the committed root and frontend npm lockfiles with `npm ci`. It runs backend TypeScript checks and tests, then frontend Vite build (which regenerates the TanStack route tree), typecheck, tests and lint. The lockfile workflow regenerates and commits lockfiles when either package manifest changes.
+
+The in-memory IP rate limiter is per backend process, not distributed across multiple Render instances. It is suitable as a single-instance guardrail, not as a global quota; use a shared limiter (for example, Redis) before horizontal scaling. The balance ledger records new changes from this release onward; it does not backfill a transaction history for pre-existing player balances.
+
+The payout worker examines the latest 100 wallet transactions. If the wallet sequence advances but a corresponding transaction cannot be found or one or more exact outgoing messages do not match, affected rows are held in `manual_review` rather than being automatically re-sent. This prioritizes avoiding duplicate payments over automatic recovery.
 
 ## Capacity
 
