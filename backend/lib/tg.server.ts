@@ -27,6 +27,7 @@ export async function botApi<T = unknown>(
 ): Promise<T> {
   const token = getBotToken();
   const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+    signal: AbortSignal.timeout(15_000),
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -96,7 +97,7 @@ export async function verifyInitData(initData: string): Promise<TgUser> {
   if (!Number.isSafeInteger(authDate) || authDate <= 0 || authDate > now + 60) {
     throw new Error("Invalid login");
   }
-  if (now - authDate > 7 * 86400) {
+  if (now - authDate > 60 * 60) {
     throw new Error("Login expired, reopen the app");
   }
 
@@ -110,7 +111,9 @@ export async function verifyInitData(initData: string): Promise<TgUser> {
     parsedUser == null ||
     typeof parsedUser !== "object" ||
     !("id" in parsedUser) ||
-    typeof parsedUser.id !== "number"
+    typeof parsedUser.id !== "number" ||
+    !Number.isSafeInteger(parsedUser.id) ||
+    parsedUser.id <= 0
   ) {
     throw new Error("Invalid login");
   }

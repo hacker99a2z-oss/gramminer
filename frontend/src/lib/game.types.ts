@@ -14,6 +14,7 @@ export type Snapshot = {
     status: string;
     createdAt: number;
     proofMessageUrl: string | null;
+    transactionHash: string | null;
   }>;
 };
 

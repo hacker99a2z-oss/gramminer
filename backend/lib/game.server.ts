@@ -2,13 +2,36 @@ import { Address } from "@ton/core";
 import { getDb, withWriteTransaction, asRow, asNumber, asText } from "./db.server.ts";
 import { AD_COOLDOWN_MS, LEADERBOARD_SIZE, MIN_WITHDRAW_MILLI, WITHDRAW_HISTORY_LIMIT, minerById } from "./rules.ts";
 import { getBot, proofChannelUrl, verifyInitData, type TgUser } from "./tg.server.ts";
-import { getTonUsd, runPayouts } from "./payout.server.ts";
+import { getTonUsd } from "./payout.server.ts";
+import { ApiError } from "./errors.server.ts";
 
 const SESSION_TTL_MS = 5 * 60 * 1000;
+const AD_CALLBACK_GRACE_MS = 10 * 60 * 1000;
+type DbTransaction = Awaited<ReturnType<ReturnType<typeof getDb>["transaction"]>>;
 const SESSION_RE = /^[a-f0-9]{32}$/;
 
 function requireChanged(rowsAffected: number, message: string) {
-  if (rowsAffected < 1) throw new Error(message);
+  if (rowsAffected < 1) throw new ApiError(message, 409, "conflict");
+}
+
+async function recordLedger(
+  tx: DbTransaction,
+  tgId: number,
+  asset: "coins" | "usd_milli",
+  entryType: string,
+  delta: number,
+  referenceId: string | null,
+) {
+  const column = asset === "coins" ? "coins" : "balance_milli";
+  const result = await tx.execute({
+    sql: "SELECT " + column + " AS balance FROM players WHERE tg_id = ?",
+    args: [tgId],
+  });
+  if (!result.rows.length) throw new ApiError("Player not found", 404, "not_found");
+  await tx.execute({
+    sql: "INSERT INTO balance_ledger(id, tg_id, asset, entry_type, delta, balance_after, reference_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    args: [crypto.randomUUID(), tgId, asset, entryType, delta, asNumber(asRow(result.rows[0])["balance"]), referenceId, new Date().toISOString()],
+  });
 }
 
 function utcDate() {
@@ -56,7 +79,7 @@ export async function snapshot(tgId: number) {
     db.execute({ sql: "SELECT * FROM players WHERE tg_id = ?", args: [tgId] }),
     db.execute({ sql: "SELECT miner_id, started_at FROM miners WHERE tg_id = ? ORDER BY miner_id", args: [tgId] }),
     db.execute({
-      sql: "SELECT id, amount_milli, nano, address, status, created_at, proof_message_url FROM withdrawals WHERE tg_id = ? ORDER BY created_at DESC LIMIT ?",
+      sql: "SELECT id, amount_milli, nano, address, status, created_at, proof_message_url, tx_hash FROM withdrawals WHERE tg_id = ? ORDER BY created_at DESC LIMIT ?",
       args: [tgId, WITHDRAW_HISTORY_LIMIT],
     }),
   ]);
@@ -88,6 +111,7 @@ export async function snapshot(tgId: number) {
         status: asText(withdrawal["status"]),
         createdAt: new Date(asText(withdrawal["created_at"])).getTime(),
         proofMessageUrl: withdrawal["proof_message_url"] ? asText(withdrawal["proof_message_url"]) : null,
+        transactionHash: withdrawal["tx_hash"] ? asText(withdrawal["tx_hash"]) : null,
       };
     }),
   };
@@ -102,11 +126,6 @@ export async function load(initData: string) {
   const tg = await auth(initData);
   await ensurePlayer(tg);
 
-  const open = await getDb().execute(
-    "SELECT COUNT(*) AS count FROM withdrawals WHERE status IN ('pending', 'sending')",
-  );
-  if (asNumber(asRow(open.rows[0])["count"]) > 0) await runPayouts();
-
   const bot = await getBot().catch(() => null);
   return { state: await snapshot(tg.id), botUsername: bot?.username ?? null, proofUrl: proofChannelUrl() };
 }
@@ -120,6 +139,7 @@ export async function claimBonus(initData: string) {
       args: [utcDate(), tg.id, utcDate()],
     });
     requireChanged(result.rowsAffected, "Daily bonus already claimed today");
+    await recordLedger(tx, tg.id, "coins", "daily_bonus", 100, "daily:" + utcDate());
   });
   return snapshot(tg.id);
 }
@@ -143,6 +163,7 @@ export async function buyMiner(initData: string, minerId: number) {
       args: [rule.cost, minerId, tg.id, rule.cost],
     });
     requireChanged(result.rowsAffected, "Not enough coins");
+    await recordLedger(tx, tg.id, "coins", "miner_purchase", -rule.cost, "miner-buy:" + minerId + ":" + crypto.randomUUID());
 
     await tx.execute({
       sql: "INSERT INTO miners(tg_id, miner_id, started_at) VALUES (?, ?, ?)",
@@ -183,6 +204,7 @@ export async function claimMiner(initData: string, minerId: number) {
       args: [rule.rewardMilli, tg.id],
     });
     requireChanged(credit.rowsAffected, "Player not found");
+    await recordLedger(tx, tg.id, "usd_milli", "miner_reward", rule.rewardMilli, "miner-claim:" + minerId + ":" + startedAt);
   });
   return snapshot(tg.id);
 }
@@ -195,6 +217,7 @@ export async function donate(initData: string) {
       args: [tg.id],
     });
     requireChanged(result.rowsAffected, "You need 100 coins to donate");
+    await recordLedger(tx, tg.id, "coins", "donation", -100, "donation:" + crypto.randomUUID());
   });
   return snapshot(tg.id);
 }
@@ -267,6 +290,7 @@ export async function claimReferral(initData: string, friendId: number) {
         args: [tg.id],
       });
       requireChanged(credit.rowsAffected, "Referrer not found");
+      await recordLedger(tx, tg.id, "coins", "referral_reward", 100, "referral:" + friendId);
     });
   } catch (error) {
     if (error instanceof Error && error.message === "NOT_ELIGIBLE") {
@@ -277,46 +301,85 @@ export async function claimReferral(initData: string, friendId: number) {
   return { ok: true as const, state: await snapshot(tg.id) };
 }
 
-export async function withdraw(initData: string, milli: number, address: string) {
+export async function withdraw(initData: string, milli: number, address: string, idempotencyKey: string) {
   const tg = await auth(initData);
-  if (!Number.isInteger(milli) || milli < MIN_WITHDRAW_MILLI) {
-    throw new Error("Minimum withdraw is $0.03");
+  if (!Number.isInteger(milli) || milli < MIN_WITHDRAW_MILLI || milli > 1_000_000) {
+    throw new ApiError("Minimum withdraw is $0.03", 400, "invalid_amount");
+  }
+  if (!/^[a-f0-9-]{16,80}$/i.test(idempotencyKey)) {
+    throw new ApiError("Invalid withdrawal request key", 400, "invalid_idempotency_key");
   }
 
   let friendly: string;
   try {
     friendly = Address.parse(address).toString({ bounceable: false });
   } catch {
-    throw new Error("Invalid wallet address");
+    throw new ApiError("Invalid wallet address", 400, "invalid_address");
+  }
+
+  const existing = await getDb().execute({
+    sql: "SELECT id, amount_milli, address FROM withdrawals WHERE tg_id = ? AND idempotency_key = ?",
+    args: [tg.id, idempotencyKey],
+  });
+  if (existing.rows.length) {
+    const row = asRow(existing.rows[0]);
+    if (asNumber(row["amount_milli"]) !== milli || asText(row["address"]) !== friendly) {
+      throw new ApiError("This retry key belongs to a different withdrawal request", 409, "idempotency_conflict");
+    }
+    return snapshot(tg.id);
   }
 
   const price = await getTonUsd();
   const nano = BigInt(Math.floor((milli / 1000 / price) * 1e9)).toString();
+  if (nano === "0") throw new ApiError("Withdrawal amount is too small for a TON transfer", 400, "amount_too_small");
   const withdrawalId = crypto.randomUUID();
-  await withWriteTransaction(async (tx) => {
-    const debit = await tx.execute({
-      sql: "UPDATE players SET balance_milli = balance_milli - ? WHERE tg_id = ? AND balance_milli >= ?",
-      args: [milli, tg.id, milli],
-    });
-    requireChanged(debit.rowsAffected, "Not enough balance");
+  const createdAt = new Date().toISOString();
 
-    await tx.execute({
-      sql: `INSERT INTO withdrawals(id, tg_id, amount_milli, nano, address, status, batch_id, proof_posted, created_at, sent_at)
-        VALUES (?, ?, ?, ?, ?, 'pending', NULL, 0, ?, NULL)`,
-      args: [withdrawalId, tg.id, milli, nano, friendly, new Date().toISOString()],
-    });
-  });
+  try {
+    await withWriteTransaction(async (tx) => {
+      const duplicate = await tx.execute({
+        sql: "SELECT id, amount_milli, address FROM withdrawals WHERE tg_id = ? AND idempotency_key = ?",
+        args: [tg.id, idempotencyKey],
+      });
+      if (duplicate.rows.length) {
+        const row = asRow(duplicate.rows[0]);
+        if (asNumber(row["amount_milli"]) !== milli || asText(row["address"]) !== friendly) {
+          throw new ApiError("This retry key belongs to a different withdrawal request", 409, "idempotency_conflict");
+        }
+        return;
+      }
 
-  await runPayouts();
+      const debit = await tx.execute({
+        sql: "UPDATE players SET balance_milli = balance_milli - ? WHERE tg_id = ? AND balance_milli >= ?",
+        args: [milli, tg.id, milli],
+      });
+      requireChanged(debit.rowsAffected, "Not enough balance");
+
+      await tx.execute({
+        sql: `INSERT INTO withdrawals
+          (id, tg_id, amount_milli, nano, address, status, batch_id, proof_posted, idempotency_key, created_at, sent_at)
+          VALUES (?, ?, ?, ?, ?, 'pending', NULL, 0, ?, ?, NULL)`,
+        args: [withdrawalId, tg.id, milli, nano, friendly, idempotencyKey, createdAt],
+      });
+      await recordLedger(tx, tg.id, "usd_milli", "withdrawal_request", -milli, "withdrawal:" + withdrawalId);
+    });
+  } catch (error) {
+    // In case another concurrent request won the unique index, reconcile with its record.
+    const retry = await getDb().execute({
+      sql: "SELECT amount_milli, address FROM withdrawals WHERE tg_id = ? AND idempotency_key = ?",
+      args: [tg.id, idempotencyKey],
+    }).catch(() => ({ rows: [] }));
+    if (!retry.rows.length) throw error;
+    const row = asRow(retry.rows[0]);
+    if (asNumber(row["amount_milli"]) !== milli || asText(row["address"]) !== friendly) throw error;
+  }
+
+  // A separate authenticated cron worker processes the queue; the user API stays fast.
   return snapshot(tg.id);
 }
 
 export async function withdrawalStatus(initData: string) {
   const tg = await auth(initData);
-  const open = await getDb().execute(
-    "SELECT COUNT(*) AS count FROM withdrawals WHERE status IN ('pending', 'sending')",
-  );
-  if (asNumber(asRow(open.rows[0])["count"]) > 0) await runPayouts();
   return snapshot(tg.id);
 }
 
@@ -332,17 +395,33 @@ export async function startAd(initData: string, abandonSessionId?: string) {
     const sessionResult = await tx.execute({ sql: "SELECT * FROM ad_sessions WHERE tg_id = ?", args: [tg.id] });
     if (sessionResult.rows.length) {
       const session = asRow(sessionResult.rows[0]);
-      if (asText(session["status"]) === "pending") {
+      const status = asText(session["status"]);
+      const phase = asText(session["phase"]);
+      const previousBlock = asText(session["callback_blocked_until"]);
+
+      if (status === "pending") {
         const expired = new Date(asText(session["expires_at"])).getTime() <= now;
-        if (abandonSessionId && asText(session["session_id"]) === abandonSessionId) {
-          await tx.execute({
-            sql: "UPDATE ad_sessions SET status = 'cancelled' WHERE tg_id = ? AND session_id = ? AND status = 'pending'",
-            args: [tg.id, abandonSessionId],
-          });
-        } else if (!expired) {
-          return { sessionId: asText(session["session_id"]), resumed: asText(session["phase"]) === "playing" };
+        const isAbandoned = Boolean(abandonSessionId && asText(session["session_id"]) === abandonSessionId);
+        if (!isAbandoned && !expired) {
+          return { sessionId: asText(session["session_id"]), resumed: phase === "playing" };
         }
+
+        if (phase === "playing") {
+          const blockedUntil = new Date(now + AD_CALLBACK_GRACE_MS).toISOString();
+          await tx.execute({
+            sql: "UPDATE ad_sessions SET status = 'cancelled', callback_blocked_until = ? WHERE tg_id = ? AND session_id = ? AND status = 'pending'",
+            args: [blockedUntil, tg.id, asText(session["session_id"])],
+          });
+          return { blockedUntil };
+        }
+
+        await tx.execute({
+          sql: "UPDATE ad_sessions SET status = 'cancelled' WHERE tg_id = ? AND session_id = ? AND status = 'pending'",
+          args: [tg.id, asText(session["session_id"])],
+        });
       }
+
+      if (previousBlock && Date.parse(previousBlock) > now) return { blockedUntil: previousBlock };
     }
 
     const player = await tx.execute({ sql: "SELECT last_ad_at FROM players WHERE tg_id = ?", args: [tg.id] });
@@ -366,6 +445,9 @@ export async function startAd(initData: string, abandonSessionId?: string) {
     });
     return { sessionId, resumed: false };
   });
+  if ("blockedUntil" in result) {
+    throw new ApiError("Please wait for the previous ad callback safety window to finish", 409, "ad_callback_grace");
+  }
   return result;
 }
 
@@ -374,8 +456,11 @@ export async function adSessionUpdate(initData: string, sessionId: string, actio
   const tg = await auth(initData);
   const patch = action === "started"
     ? "UPDATE ad_sessions SET phase = 'playing' WHERE tg_id = ? AND session_id = ? AND status = 'pending'"
-    : "UPDATE ad_sessions SET status = 'cancelled' WHERE tg_id = ? AND session_id = ? AND status = 'pending'";
-  const result = await getDb().execute({ sql: patch, args: [tg.id, sessionId] });
+    : "UPDATE ad_sessions SET status = 'cancelled', callback_blocked_until = CASE WHEN phase = 'playing' THEN ? ELSE callback_blocked_until END WHERE tg_id = ? AND session_id = ? AND status = 'pending'";
+  const args = action === "started"
+    ? [tg.id, sessionId]
+    : [new Date(Date.now() + AD_CALLBACK_GRACE_MS).toISOString(), tg.id, sessionId];
+  const result = await getDb().execute({ sql: patch, args });
   if (action === "started") {
     requireChanged(result.rowsAffected, "Ad session is no longer active. Tap Watch Ad again.");
   }
@@ -439,6 +524,7 @@ export async function rewardAd(tgId: number): Promise<string> {
       sql: "UPDATE ad_sessions SET status = 'verified', verified_at = ? WHERE tg_id = ? AND session_id = ? AND status = 'pending'",
       args: [now, tgId, currentSessionId],
     });
+    await recordLedger(tx, tgId, "coins", "rewarded_ad", 100, "ad:" + currentSessionId);
     return "ok";
   });
 }

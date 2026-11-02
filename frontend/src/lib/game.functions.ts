@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { Snapshot, LoadResult, Leaderboard, Referrals, ReferralClaim, AdStatus } from "./game.types";
 
-const backendUrl = (import.meta.env.VITE_BACKEND_URL || "https://gramminer-backend.onrender.com").replace(/\/+$/, "");
+const backendUrl = (import.meta.env["VITE_BACKEND_URL"] || "https://gramminer-backend.onrender.com").replace(/\/+$/, "");
 const init = z.string().min(1).max(4096);
 const withInit = z.object({ initData: init });
 const minerInput = z.object({ initData: init, minerId: z.number().int().min(1).max(5) });
@@ -10,14 +10,17 @@ const sessionInput = z.object({ initData: init, sessionId: z.string().regex(/^[a
 async function callBackend<T>(path: string, data?: unknown): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(backendUrl + path, {
+    const request: RequestInit = {
       method: data === undefined ? "GET" : "POST",
-      headers: data === undefined ? undefined : { "content-type": "application/json" },
-      body: data === undefined ? undefined : JSON.stringify(data),
       mode: "cors",
       credentials: "omit",
       cache: "no-store",
-    });
+    };
+    if (data !== undefined) {
+      request.headers = { "content-type": "application/json" };
+      request.body = JSON.stringify(data);
+    }
+    response = await fetch(backendUrl + path, request);
   } catch {
     throw new Error("Could not reach the backend. Check the Render service and VITE_BACKEND_URL.");
   }
@@ -77,6 +80,7 @@ export const requestWithdraw = ({ data }: DataInput<unknown>) => {
     initData: init,
     milli: z.number().int().min(30).max(1_000_000),
     address: z.string().min(40).max(80),
+    idempotencyKey: z.string().regex(/^[a-f0-9-]{16,80}$/i),
   }).parse(data);
   return callBackend<Snapshot>("/api/game/withdraw", parsed);
 };

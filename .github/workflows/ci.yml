@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "fix/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --legacy-peer-deps --no-audit --no-fund
+      - name: Build and regenerate TanStack route tree
+        working-directory: frontend
+        run: npm run build
+      - name: Typecheck
+        working-directory: frontend
+        run: npx tsc --noEmit
+      - name: Tests
+        working-directory: frontend
+        run: npm test
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
