@@ -85,7 +85,7 @@ https://gramminer-backend.onrender.com/api/public/payout
 Authorization: Bearer YOUR_PAYOUT_CRON_SECRET
 Content-Type: application/json
 
-No request body is required. Keep the secret out of URLs and logs.
+No request body is required. Keep the secret out of URLs and logs. The old GET ?key=... method is temporarily retained for existing schedulers and logs a deprecation warning; migrate it to POST + Bearer authentication because URL query strings can appear in access logs.
 
 The worker uses an owner-token database lease, lease renewal, request timeouts and idempotent rebroadcast of the exact persisted signed BOC. It marks a withdrawal sent only when the wallet transaction's inbound external-message hash and its outgoing destination, exact nanotons and unique body hash match the withdrawal. Seqno movement alone is not a success signal.
 
@@ -93,7 +93,7 @@ Legacy in-flight payout batches created before this change do not have the signe
 
 When PAYMENT_PROOF_CHAT_ID is set, the cron worker publishes transaction-linked proof messages and retries failed Telegram posts with exponential backoff. Public proof messages omit Telegram IDs and wallet addresses. Proof posting is at-least-once: a Telegram response lost after successful delivery can still cause a duplicate proof post on retry.
 
-Before enabling the new payout cron: back up Turso, reconcile any old sending batch manually, and update the scheduler from the former GET/query-secret URL to POST + Bearer header.
+Before enabling the new payout cron: back up Turso and reconcile any old sending batch manually. The previous GET/query-secret scheduler keeps working during migration, but should be updated to POST + Bearer header.
 
 ## CI and tests
 
