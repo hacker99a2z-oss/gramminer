@@ -262,10 +262,11 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     return;
   }
 
-  if (req.method === "POST" && postRoutes[url.pathname]) {
+  const routeHandler = postRoutes[url.pathname];
+  if (req.method === "POST" && routeHandler) {
     try {
       const body = await readJson(req);
-      const result = await postRoutes[url.pathname](body);
+      const result = await routeHandler(body);
       json(res, 200, result);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Request failed";
