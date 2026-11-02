@@ -418,7 +418,7 @@ export async function runPayouts(): Promise<{
     if (asNumber(asRow(active.rows[0])["count"]) > 0) {
       return {
         confirmed: reconciled.confirmed,
-        manualReview: reconciled.review,
+        manualReview: manualReviewAtStart + reconciled.review,
         expired: reconciled.expired,
         proofPosts: proofPosts + await postProofs(ownerToken),
         note: "waiting for payout batch reconciliation",
@@ -432,7 +432,7 @@ export async function runPayouts(): Promise<{
     if (!pendingResult.rows.length) {
       return {
         confirmed: reconciled.confirmed,
-        manualReview: reconciled.review,
+        manualReview: manualReviewAtStart + reconciled.review,
         expired: reconciled.expired,
         proofPosts: proofPosts + await postProofs(ownerToken),
       };
@@ -454,7 +454,7 @@ export async function runPayouts(): Promise<{
     if (!selected.length) {
       return {
         confirmed: reconciled.confirmed,
-        manualReview: reconciled.review,
+        manualReview: manualReviewAtStart + reconciled.review,
         expired: reconciled.expired,
         proofPosts: proofPosts + await postProofs(ownerToken),
         note: "payout wallet low on funds",
@@ -526,7 +526,7 @@ export async function runPayouts(): Promise<{
 
     return {
       confirmed: reconciled.confirmed,
-      manualReview: reconciled.review,
+      manualReview: manualReviewAtStart + reconciled.review,
       expired: reconciled.expired,
       proofPosts,
       note: "signed payout broadcast; blockchain confirmation pending",
