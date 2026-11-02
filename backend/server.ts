@@ -124,7 +124,7 @@ function rateLimit(req: IncomingMessage, path: string): boolean {
         : null;
   if (!route) return false;
 
-  const limits: Record<string, number> = { adsgram: 120, payout: 2, game: 300 };
+  const limits: Record<string, number> = { adsgram: 1200, payout: 2, game: 1200 };
   const key = route + ":" + requestIp(req);
   const current = rateBuckets.get(key);
   if (!current || current.resetAt <= now) {
