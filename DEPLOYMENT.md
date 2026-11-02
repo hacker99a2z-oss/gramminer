@@ -20,7 +20,7 @@ Gameplay requests go directly from the browser to Render. Telegram Mini App init
 
 Keep Root Directory blank (repository root).
 
-- Build Command: npm install --omit=dev
+- Build Command: npm ci --omit=dev
 - Start Command: npm run start:api
 - Health Check Path: /health
 - Region: Singapore
@@ -48,7 +48,7 @@ Optional variables:
 
 - Root Directory: frontend
 - Framework Preset: Vite
-- Install Command: npm install --legacy-peer-deps
+- Install Command: npm ci --legacy-peer-deps
 - Build Command: npm run build
 - Output Directory: dist
 - Public environment variable: VITE_BACKEND_URL=https://gramminer-backend.onrender.com
