@@ -80,6 +80,42 @@ test("balance ledger requires an existing player and rejects zero deltas", async
   );
 });
 
+
+test("payout lease is exclusive and a stale owner cannot release another owner's lock", async () => {
+  const now = new Date().toISOString();
+  await db.execute({
+    sql: "INSERT OR REPLACE INTO locks(id, until, owner_token) VALUES ('payout', ?, NULL)",
+    args: [new Date(0).toISOString()],
+  });
+
+  const first = await db.execute({
+    sql: "UPDATE locks SET until = ?, owner_token = ? WHERE id = 'payout' AND until < ?",
+    args: [new Date(Date.now() + 120_000).toISOString(), "worker-a", now],
+  });
+  assert.equal(first.rowsAffected, 1);
+
+  const contender = await db.execute({
+    sql: "UPDATE locks SET until = ?, owner_token = ? WHERE id = 'payout' AND until < ?",
+    args: [new Date(Date.now() + 120_000).toISOString(), "worker-b", new Date().toISOString()],
+  });
+  assert.equal(contender.rowsAffected, 0);
+
+  const staleRelease = await db.execute({
+    sql: "UPDATE locks SET until = ?, owner_token = NULL WHERE id = 'payout' AND owner_token = ?",
+    args: [new Date(0).toISOString(), "worker-b"],
+  });
+  assert.equal(staleRelease.rowsAffected, 0);
+
+  const stillOwned = await db.execute("SELECT owner_token FROM locks WHERE id = 'payout'");
+  assert.equal(String(stillOwned.rows[0]?.["owner_token"]), "worker-a");
+
+  const ownerRelease = await db.execute({
+    sql: "UPDATE locks SET until = ?, owner_token = NULL WHERE id = 'payout' AND owner_token = ?",
+    args: [new Date(0).toISOString(), "worker-a"],
+  });
+  assert.equal(ownerRelease.rowsAffected, 1);
+});
+
 test("database closes cleanly", () => {
   closeDatabase();
 });
