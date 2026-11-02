@@ -6,6 +6,7 @@ import { getDb, withWriteTransaction, asRow, asNumber, asText } from "./db.serve
 import { botApi } from "./tg.server.ts";
 import {
   matchPayoutMessages,
+  normalizeTonHash,
   transactionMatchesExternalHash,
   type TonTransaction,
 } from "./payout-utils.ts";
@@ -204,16 +205,18 @@ async function markLegacyBatchesForReview(): Promise<number> {
   const legacy = await getDb().execute(
     "SELECT id, ids FROM payout_batches WHERE status IN ('sending', 'broadcasting') AND (tx_hash IS NULL OR boc IS NULL)",
   );
+  let moved = 0;
   for (const value of legacy.rows) {
     const batch = asRow(value);
     const ids = parseIds(batch["ids"]);
     await withWriteTransaction(async (tx) => {
       if (ids.length) {
         const slots = ids.map(() => "?").join(", ");
-        await tx.execute({
+        const result = await tx.execute({
           sql: "UPDATE withdrawals SET status = 'manual_review' WHERE id IN (" + slots + ") AND status = 'sending'",
           args: ids,
         });
+        moved += result.rowsAffected;
       }
       await tx.execute({
         sql: "UPDATE payout_batches SET status = 'manual_review' WHERE id = ? AND status IN ('sending', 'broadcasting')",
@@ -221,7 +224,14 @@ async function markLegacyBatchesForReview(): Promise<number> {
       });
     });
   }
-  return legacy.rows.length;
+
+  // The earlier seqno-only implementation may have marked rows as sent without
+  // persisting a transaction hash. Those cannot be considered verified here.
+  const historical = await getDb().execute(
+    "UPDATE withdrawals SET status = 'manual_review' WHERE status = 'sent' AND tx_hash IS NULL",
+  );
+  moved += historical.rowsAffected;
+  return moved;
 }
 
 async function reconcileOpenBatches(
@@ -260,7 +270,8 @@ async function reconcileOpenBatches(
       const output = expected.length === ids.length
         ? matchPayoutMessages(expected, transaction.out_msgs ?? [])
         : { matched: [] as string[], unmatched: ids };
-      const transactionHash = asText(transaction.transaction_id?.hash);
+      const transactionHash = normalizeTonHash(transaction.transaction_id?.hash)
+        ?? asText(transaction.transaction_id?.hash);
       const confirmedAt = new Date(Number(transaction.utime ?? Math.floor(Date.now() / 1000)) * 1000).toISOString();
 
       await withWriteTransaction(async (tx) => {
@@ -377,14 +388,15 @@ export async function runPayouts(): Promise<{
   };
 
   try {
+    const manualReviewAtStart = await markLegacyBatchesForReview();
+    assertLease();
     const proofPosts = await postProofs(ownerToken);
     if (!process.env["TON_WALLET_MNEMONIC"]) {
-      return { confirmed: 0, manualReview: 0, expired: 0, proofPosts, note: "payout wallet not configured" };
+      return { confirmed: 0, manualReview: manualReviewAtStart, expired: 0, proofPosts, note: "payout wallet not configured" };
     }
 
     const { contract, secretKey, max } = await wallet();
     const walletAddress = contract.address.toString({ bounceable: false });
-    await markLegacyBatchesForReview();
     assertLease();
 
     const transactions = await getTransactions(walletAddress);
@@ -395,7 +407,7 @@ export async function runPayouts(): Promise<{
     if (reconciled.note) {
       return {
         confirmed: reconciled.confirmed,
-        manualReview: reconciled.review,
+        manualReview: manualReviewAtStart + reconciled.review,
         expired: reconciled.expired,
         proofPosts: proofPosts + await postProofs(ownerToken),
         note: reconciled.note,
