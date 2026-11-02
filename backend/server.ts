@@ -249,14 +249,22 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     return;
   }
 
-  if (req.method === "POST" && url.pathname === "/api/public/payout") {
+  if (
+    (req.method === "POST" || req.method === "GET") &&
+    url.pathname === "/api/public/payout"
+  ) {
     const secret = process.env["PAYOUT_CRON_SECRET"];
+    const legacyQueryKey = req.method === "GET" ? url.searchParams.get("key") ?? "" : "";
     const authorization = req.headers.authorization ?? "";
-    const supplied = Buffer.from(authorization.startsWith("Bearer ") ? authorization.slice(7) : "");
+    const bearerKey = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+    const supplied = Buffer.from(req.method === "GET" ? legacyQueryKey : bearerKey);
     const configured = Buffer.from(secret ?? "");
     if (!secret || supplied.length !== configured.length || !timingSafeEqual(supplied, configured)) {
       text(res, 403, "Forbidden");
       return;
+    }
+    if (req.method === "GET") {
+      console.warn("[payout] legacy query-string cron authentication used; migrate to POST + Authorization: Bearer");
     }
     json(res, 200, await runPayouts());
     return;
