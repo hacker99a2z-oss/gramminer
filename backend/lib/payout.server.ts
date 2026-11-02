@@ -17,7 +17,7 @@ const HEARTBEAT_MS = 30_000;
 const REQUEST_TIMEOUT_MS = 15_000;
 const WALLET_MESSAGE_TTL_SECONDS = 5 * 60;
 const WALLET_MESSAGE_GRACE_MS = 7 * 60_000;
-const MAX_TRANSACTIONS = 30;
+const MAX_TRANSACTIONS = 100;
 
 const headers = (): Record<string, string> => {
   const key = process.env["TONCENTER_API_KEY"];
