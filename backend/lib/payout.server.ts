@@ -490,7 +490,9 @@ export async function runPayouts(): Promise<{
       seqno,
       secretKey,
       timeout,
-      sendMode: SendMode.PAY_GAS_SEPARATELY,
+      // Wallet V5 requires IGNORE_ERRORS for external signed requests.
+      // A withdrawal is still marked sent only after its exact out-message is verified.
+      sendMode: SendMode.PAY_GAS_SEPARATELY + SendMode.IGNORE_ERRORS,
       messages: withdrawalMessages.map((item) => item.message),
     });
     const externalMessage = external({
