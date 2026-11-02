@@ -90,7 +90,7 @@ export function getDb(): Client {
     throw new Error("TURSO_AUTH_TOKEN is missing. Set it in Render Environment Variables.");
   }
 
-  client = createClient({ url, authToken });
+  client = createClient({ url, ...(authToken ? { authToken } : {}) });
   return client;
 }
 
