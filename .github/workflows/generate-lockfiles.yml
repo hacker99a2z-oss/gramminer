@@ -3,7 +3,8 @@ name: Generate npm lockfiles
 on:
   push:
     branches:
-      - fix/security-reward-payout-hardening
+      - main
+      - "fix/**"
     paths:
       - package.json
       - frontend/package.json
