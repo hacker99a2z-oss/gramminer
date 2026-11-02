@@ -3,6 +3,7 @@ import { setDefaultResultOrder } from "node:dns";
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import * as game from "./lib/game.server.ts";
+import { ApiError } from "./lib/errors.server.ts";
 import { closeDatabase, getDb, initializeDatabase } from "./lib/db.server.ts";
 import { runPayouts } from "./lib/payout.server.ts";
 import { configureTelegramWebhook, startWelcomeWebhookReply, verifyTelegramWebhookSecret } from "./lib/tg.server.ts";
@@ -35,8 +36,9 @@ const postRoutes: Record<string, (body: unknown) => Promise<unknown>> = {
       initData,
       milli: z.number().int().min(30).max(1_000_000),
       address: z.string().min(40).max(80),
+      idempotencyKey: z.string().regex(/^[a-f0-9-]{16,80}$/i),
     }).parse(body);
-    return game.withdraw(data.initData, data.milli, data.address);
+    return game.withdraw(data.initData, data.milli, data.address, data.idempotencyKey);
   },
   "/api/game/start-ad": async (body) => {
     const data = z.object({
@@ -59,16 +61,25 @@ const postRoutes: Record<string, (body: unknown) => Promise<unknown>> = {
   },
 };
 
+function securityHeaders(): Record<string, string> {
+  return {
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "no-referrer",
+    "x-frame-options": "DENY",
+  };
+}
+
 function json(res: ServerResponse, status: number, value: unknown) {
   res.writeHead(status, {
+    ...securityHeaders(),
     "content-type": "application/json; charset=utf-8",
-    "cache-control": "no-store",
   });
   res.end(JSON.stringify(value));
 }
 
 function text(res: ServerResponse, status: number, value: string) {
-  res.writeHead(status, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
+  res.writeHead(status, { ...securityHeaders(), "content-type": "text/plain; charset=utf-8" });
   res.end(value);
 }
 
@@ -78,11 +89,55 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
   for await (const chunk of req) {
     const part = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += part.length;
-    if (size > 16 * 1024) throw new Error("Request body too large");
+    if (size > 16 * 1024) throw new ApiError("Request body too large", 413, "payload_too_large");
     chunks.push(part);
   }
   const raw = Buffer.concat(chunks).toString("utf8");
-  return raw ? JSON.parse(raw) : {};
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new ApiError("Invalid JSON request body", 400, "invalid_json");
+  }
+}
+
+type RateLimitBucket = { count: number; resetAt: number };
+const rateBuckets = new Map<string, RateLimitBucket>();
+
+function requestIp(req: IncomingMessage): string {
+  // Render's reverse proxy appends the connecting address to X-Forwarded-For.
+  const forwarded = req.headers["x-forwarded-for"];
+  const chain = Array.isArray(forwarded) ? forwarded.join(",") : forwarded ?? "";
+  return chain.split(",").map((part) => part.trim()).filter(Boolean).at(-1)
+    ?? req.socket.remoteAddress
+    ?? "unknown";
+}
+
+function rateLimit(req: IncomingMessage, path: string): boolean {
+  const now = Date.now();
+  const route = path === "/api/public/adsgram/reward"
+    ? "adsgram"
+    : path === "/api/public/payout"
+      ? "payout"
+      : path.startsWith("/api/game/")
+        ? "game"
+        : null;
+  if (!route) return false;
+
+  const limits: Record<string, number> = { adsgram: 120, payout: 2, game: 300 };
+  const key = route + ":" + requestIp(req);
+  const current = rateBuckets.get(key);
+  if (!current || current.resetAt <= now) {
+    rateBuckets.set(key, { count: 1, resetAt: now + 60_000 });
+    return false;
+  }
+  current.count++;
+  if (rateBuckets.size > 20_000) {
+    for (const [bucketKey, bucket] of rateBuckets) {
+      if (bucket.resetAt <= now) rateBuckets.delete(bucketKey);
+    }
+  }
+  return current.count > limits[route]!;
 }
 
 const allowedOrigins = new Set(
@@ -113,6 +168,12 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   if (req.method === "OPTIONS") {
     res.writeHead(204);
     res.end();
+    return;
+  }
+
+  if (rateLimit(req, url.pathname)) {
+    res.setHeader("retry-after", "60");
+    json(res, 429, { error: "Too many requests. Please retry in a minute." });
     return;
   }
 
@@ -188,10 +249,10 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     return;
   }
 
-  if (req.method === "GET" && url.pathname === "/api/public/payout") {
+  if (req.method === "POST" && url.pathname === "/api/public/payout") {
     const secret = process.env["PAYOUT_CRON_SECRET"];
-    const key = url.searchParams.get("key") ?? "";
-    const supplied = Buffer.from(key);
+    const authorization = req.headers.authorization ?? "";
+    const supplied = Buffer.from(authorization.startsWith("Bearer ") ? authorization.slice(7) : "");
     const configured = Buffer.from(secret ?? "");
     if (!secret || supplied.length !== configured.length || !timingSafeEqual(supplied, configured)) {
       text(res, 403, "Forbidden");
@@ -208,8 +269,21 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       json(res, 200, result);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Request failed";
-      const unauthorized = /invalid login|login expired|open the app inside telegram|unauthorized/i.test(message);
-      json(res, error instanceof z.ZodError ? 400 : unauthorized ? 401 : 500, { error: message });
+      if (error instanceof z.ZodError) {
+        json(res, 400, {
+          error: "Invalid request",
+          details: error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message })),
+        });
+      } else if (error instanceof ApiError) {
+        json(res, error.status, { error: error.message, code: error.code });
+      } else if (/invalid login|login expired|open the app inside telegram|unauthorized/i.test(message)) {
+        json(res, 401, { error: "Login expired. Reopen Gram Miner inside Telegram." });
+      } else if (/already|not enough|not found|not eligible|too early|finished yet|cooldown|wait for|do not own|unknown miner/i.test(message)) {
+        json(res, 409, { error: message, code: "conflict" });
+      } else {
+        console.error("[api] request failed", error);
+        json(res, 500, { error: "Internal server error", code: "internal_error" });
+      }
     }
     return;
   }

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ExternalLink, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { GameShell, SectionTitle } from "@/components/GameShell";
@@ -23,13 +23,14 @@ export const Route = createFileRoute("/withdraw")({
   component: Withdraw,
 });
 
-const statusLabel: Record<string, string> = { sending: "pending" };
+const statusLabel: Record<string, string> = { sending: "pending", manual_review: "review required" };
 
 const statusStyle: Record<string, string> = {
   sent: "bg-success/15 text-success",
   pending: "bg-accent text-accent-foreground",
   sending: "bg-accent text-accent-foreground",
   failed: "bg-destructive/20 text-destructive",
+  manual_review: "bg-destructive/20 text-destructive",
 };
 
 function Withdraw() {
@@ -37,6 +38,7 @@ function Withdraw() {
   const address = useWalletAddress();
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
+  const pendingRequest = useRef<{ payload: string; key: string } | null>(null);
   const balance = game.state?.balanceMilli ?? 0;
   const pct = Math.min(100, (balance / MIN_WITHDRAW_MILLI) * 100);
   const history = game.state?.withdrawals ?? [];
@@ -48,9 +50,15 @@ function Withdraw() {
     const milli = Math.round(Number(amount) * 1000);
     if (!Number.isFinite(milli) || milli < MIN_WITHDRAW_MILLI) { toast.error(`Minimum withdraw is ${usd(MIN_WITHDRAW_MILLI)}`); return; }
     if (milli > balance) { toast.error("Not enough balance"); return; }
+    const payload = JSON.stringify({ milli, address });
+    const idempotencyKey = pendingRequest.current?.payload === payload
+      ? pendingRequest.current.key
+      : crypto.randomUUID();
+    pendingRequest.current = { payload, key: idempotencyKey };
     setBusy(true);
     try {
-      game.setState(await requestWithdraw({ data: { initData: game.initData, milli, address } }));
+      game.setState(await requestWithdraw({ data: { initData: game.initData, milli, address, idempotencyKey } }));
+      pendingRequest.current = null;
       setAmount("");
       haptic("success");
       toast.success("Withdrawal requested — it will be sent automatically");
@@ -122,6 +130,16 @@ function Withdraw() {
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <span className={`rounded-full px-2 py-0.5 text-xs font-bold capitalize ${statusStyle[w.status] ?? "bg-secondary"}`}>{statusLabel[w.status] ?? w.status}</span>
+                {w.status === "sent" && w.transactionHash && (
+                  <a
+                    href={`https://tonviewer.com/transaction/${encodeURIComponent(w.transactionHash)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-ghost-gm !px-3 !py-1 text-xs"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" /> TX
+                  </a>
+                )}
                 {w.status === "sent" && w.proofMessageUrl && (
                   <a
                     href={w.proofMessageUrl}
@@ -129,7 +147,7 @@ function Withdraw() {
                     rel="noopener noreferrer"
                     className="btn-ghost-gm !px-3 !py-1 text-xs"
                   >
-                    <ExternalLink className="h-3.5 w-3.5" /> View
+                    <ExternalLink className="h-3.5 w-3.5" /> Proof
                   </a>
                 )}
               </div>
