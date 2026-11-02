@@ -170,9 +170,11 @@ export async function claimMiner(initData: string, minerId: number) {
       throw new Error("Mining is not finished yet");
     }
 
+    // A completed mining cycle is one-time: claiming removes the active miner.
+    // The player must spend coins to buy this miner again for the next cycle.
     const update = await tx.execute({
-      sql: "UPDATE miners SET started_at = ? WHERE tg_id = ? AND miner_id = ? AND started_at = ?",
-      args: [new Date(now).toISOString(), tg.id, minerId, startedAt],
+      sql: "DELETE FROM miners WHERE tg_id = ? AND miner_id = ? AND started_at = ?",
+      args: [tg.id, minerId, startedAt],
     });
     requireChanged(update.rowsAffected, "Mining has already been claimed; refresh and try again");
 
