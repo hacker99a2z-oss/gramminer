@@ -171,7 +171,7 @@ async function postProofs(ownerToken: string): Promise<number> {
       "👤 User: <b>" + escapeHtml(displayName) + "</b>",
       "💵 USD amount: <b>$" + (asNumber(withdrawal["amount_milli"]) / 1000).toFixed(3) + "</b>",
       "💎 TON amount: <b>" + ton + " TON</b>",
-      "🔗 <a href=\\\"https://tonviewer.com/transaction/" + encodeURIComponent(txHash) + "\\\">View transaction</a>",
+      "🔗 <a href=\\\"https://tonviewer.com/transaction/" + encodeURIComponent(txHash) + "\\">View transaction</a>",
       "",
       "⛏ Gram Miner — auto withdrawal",
     ].join("\\n");
