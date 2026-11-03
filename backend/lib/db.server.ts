@@ -215,16 +215,20 @@ export async function initializeDatabase(): Promise<void> {
     });
     // Preserve every existing withdrawal while assigning stable public numbers
     // in chronological order. Any previously-numbered rows keep their numbers.
-    await db.execute(`
-      UPDATE withdrawals
-      SET public_number =
-        (SELECT COALESCE(MAX(public_number), 0) FROM withdrawals) +
-        (SELECT COUNT(*) FROM withdrawals AS prior
-         WHERE prior.public_number IS NULL
-           AND (prior.created_at < withdrawals.created_at
-             OR (prior.created_at = withdrawals.created_at AND prior.id <= withdrawals.id)))
-      WHERE public_number IS NULL
-    `);
+    const unnumbered = await db.execute(
+      "SELECT id FROM withdrawals WHERE public_number IS NULL ORDER BY created_at, id",
+    );
+    const numbered = await db.execute(
+      "SELECT COALESCE(MAX(public_number), 0) AS last_number FROM withdrawals",
+    );
+    let publicNumber = Number(numbered.rows[0]?.["last_number"] ?? 0);
+    for (const value of unnumbered.rows) {
+      publicNumber++;
+      await db.execute({
+        sql: "UPDATE withdrawals SET public_number = ? WHERE id = ? AND public_number IS NULL",
+        args: [publicNumber, String((value as { id?: unknown }).id ?? "")],
+      });
+    }
     await db.execute({
       sql: "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
       args: [4, new Date().toISOString()],
