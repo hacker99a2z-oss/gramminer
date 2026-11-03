@@ -79,7 +79,7 @@ Provider limitation: AdsGram's documented Reward URL sends the Telegram user ID,
 
 ## Payout cron
 
-The player-facing withdrawal, game-load and status APIs only enqueue/read withdrawals. They do not call TON Center or broadcast transactions. Configure an external scheduler to send an HTTP POST every minute directly to:
+When a user submits a withdrawal, the authenticated player API queues it and immediately starts the existing payout worker to broadcast the TON transfer. Keep an external scheduler running every minute to reconcile blockchain confirmation, recover interrupted broadcasts and retry Telegram proof posts. Configure it to send an HTTP POST directly to:
 
 https://gramminer-backend.onrender.com/api/public/payout
 Authorization: Bearer YOUR_PAYOUT_CRON_SECRET
