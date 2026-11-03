@@ -8,10 +8,10 @@ const { getDb, initializeDatabase, closeDatabase } = await import("../lib/db.ser
 await initializeDatabase();
 const db = getDb();
 
-test("migrations are idempotent and schema version 3 is present", async () => {
+test("migrations are idempotent and schema version 4 is present", async () => {
   await initializeDatabase();
   const result = await db.execute("SELECT version FROM schema_migrations ORDER BY version");
-  assert.deepEqual(result.rows.map((row) => Number(row["version"])), [1, 2, 3]);
+  assert.deepEqual(result.rows.map((row) => Number(row["version"])), [1, 2, 3, 4]);
 });
 
 test("balance guards reject negative player balances", async () => {
@@ -58,6 +58,25 @@ test("withdrawal idempotency key is unique per Telegram user", async () => {
     db.execute({
       sql: "INSERT INTO withdrawals(id, tg_id, amount_milli, nano, address, idempotency_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
       args: ["withdrawal-two", ...values.slice(1)],
+    }),
+    /unique/i,
+  );
+});
+
+test("public withdrawal numbers are unique", async () => {
+  await db.execute({
+    sql: "INSERT INTO players(tg_id, first_name, created_at) VALUES (?, ?, ?)",
+    args: [1002, "Second Miner", new Date().toISOString()],
+  });
+  const values = ["public-number-one", 1001, 30, "100", "0:" + "2".repeat(64), 777, new Date().toISOString()];
+  await db.execute({
+    sql: "INSERT INTO withdrawals(id, tg_id, amount_milli, nano, address, public_number, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    args: values,
+  });
+  await assert.rejects(
+    db.execute({
+      sql: "INSERT INTO withdrawals(id, tg_id, amount_milli, nano, address, public_number, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      args: ["public-number-two", 1002, 30, "100", "0:" + "3".repeat(64), 777, new Date().toISOString()],
     }),
     /unique/i,
   );
