@@ -38,7 +38,13 @@ const postRoutes: Record<string, (body: unknown) => Promise<unknown>> = {
       address: z.string().min(40).max(80),
       idempotencyKey: z.string().regex(/^[a-f0-9-]{16,80}$/i),
     }).parse(body);
-    return game.withdraw(data.initData, data.milli, data.address, data.idempotencyKey);
+    const state = await game.withdraw(data.initData, data.milli, data.address, data.idempotencyKey);
+    // Start the existing payout worker immediately; the scheduled worker still
+    // handles confirmation checks and Telegram proof retries.
+    void runPayouts().catch((error) => {
+      console.error("[payout] on-demand dispatch failed; withdrawal remains queued for worker retry", error);
+    });
+    return state;
   },
   "/api/game/start-ad": async (body) => {
     const data = z.object({
