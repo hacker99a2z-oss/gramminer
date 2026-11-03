@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS withdrawals (
   status TEXT NOT NULL DEFAULT 'pending',
   batch_id TEXT,
   proof_posted INTEGER NOT NULL DEFAULT 0,
+  public_number INTEGER,
   created_at TEXT NOT NULL,
   sent_at TEXT
 );
@@ -118,6 +119,7 @@ export async function initializeDatabase(): Promise<void> {
     await db.executeMultiple(SCHEMA_SQL);
 
     // Additive, idempotent migrations preserve existing player and payout records.
+    await ensureColumn(db, "withdrawals", "public_number", "INTEGER");
     await ensureColumn(db, "withdrawals", "proof_message_url", "TEXT");
     await ensureColumn(db, "withdrawals", "idempotency_key", "TEXT");
     await ensureColumn(db, "withdrawals", "tx_hash", "TEXT");
@@ -137,6 +139,8 @@ export async function initializeDatabase(): Promise<void> {
     await db.executeMultiple(`
       CREATE INDEX IF NOT EXISTS withdrawals_proof_retry_idx
         ON withdrawals(status, proof_posted, proof_next_attempt_at);
+      CREATE UNIQUE INDEX IF NOT EXISTS withdrawals_public_number_idx
+        ON withdrawals(public_number) WHERE public_number IS NOT NULL;
       CREATE UNIQUE INDEX IF NOT EXISTS withdrawals_idempotency_idx
         ON withdrawals(tg_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
       CREATE TABLE IF NOT EXISTS balance_ledger (
@@ -208,6 +212,22 @@ export async function initializeDatabase(): Promise<void> {
     await db.execute({
       sql: "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
       args: [3, new Date().toISOString()],
+    });
+    // Preserve every existing withdrawal while assigning stable public numbers
+    // in chronological order. Any previously-numbered rows keep their numbers.
+    await db.execute(`
+      UPDATE withdrawals
+      SET public_number =
+        (SELECT COALESCE(MAX(public_number), 0) FROM withdrawals) +
+        (SELECT COUNT(*) FROM withdrawals AS prior
+         WHERE prior.public_number IS NULL
+           AND (prior.created_at < withdrawals.created_at
+             OR (prior.created_at = withdrawals.created_at AND prior.id <= withdrawals.id)))
+      WHERE public_number IS NULL
+    `);
+    await db.execute({
+      sql: "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+      args: [4, new Date().toISOString()],
     });
     await db.execute("SELECT 1");
     initialized = true;
