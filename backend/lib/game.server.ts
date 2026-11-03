@@ -349,6 +349,11 @@ export async function withdraw(initData: string, milli: number, address: string,
         return;
       }
 
+      const numberResult = await tx.execute(
+        "SELECT COALESCE(MAX(public_number), 0) + 1 AS next_number FROM withdrawals",
+      );
+      const publicNumber = asNumber(asRow(numberResult.rows[0])["next_number"]);
+
       const debit = await tx.execute({
         sql: "UPDATE players SET balance_milli = balance_milli - ? WHERE tg_id = ? AND balance_milli >= ?",
         args: [milli, tg.id, milli],
@@ -357,9 +362,9 @@ export async function withdraw(initData: string, milli: number, address: string,
 
       await tx.execute({
         sql: `INSERT INTO withdrawals
-          (id, tg_id, amount_milli, nano, address, status, batch_id, proof_posted, idempotency_key, created_at, sent_at)
-          VALUES (?, ?, ?, ?, ?, 'pending', NULL, 0, ?, ?, NULL)`,
-        args: [withdrawalId, tg.id, milli, nano, friendly, idempotencyKey, createdAt],
+          (id, tg_id, amount_milli, nano, address, status, batch_id, proof_posted, public_number, idempotency_key, created_at, sent_at)
+          VALUES (?, ?, ?, ?, ?, 'pending', NULL, 0, ?, ?, ?, NULL)`,
+        args: [withdrawalId, tg.id, milli, nano, friendly, publicNumber, idempotencyKey, createdAt],
       });
       await recordLedger(tx, tg.id, "usd_milli", "withdrawal_request", -milli, "withdrawal:" + withdrawalId);
     });
