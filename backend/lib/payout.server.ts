@@ -142,7 +142,14 @@ async function postProofs(ownerToken: string): Promise<number> {
   if (!chat) return 0;
   const now = new Date().toISOString();
   const result = await getDb().execute({
-    sql: "SELECT * FROM withdrawals WHERE status = 'sent' AND proof_posted = 0 AND (proof_next_attempt_at IS NULL OR proof_next_attempt_at <= ?) ORDER BY sent_at LIMIT 25",
+    sql: `SELECT withdrawals.*, players.username AS user_username, players.first_name AS user_first_name
+      FROM withdrawals
+      JOIN players ON players.tg_id = withdrawals.tg_id
+      WHERE withdrawals.status = 'sent'
+        AND withdrawals.proof_posted = 0
+        AND (withdrawals.proof_next_attempt_at IS NULL OR withdrawals.proof_next_attempt_at <= ?)
+      ORDER BY withdrawals.sent_at, withdrawals.created_at, withdrawals.id
+      LIMIT 25`,
     args: [now],
   });
   let postedCount = 0;
@@ -154,16 +161,20 @@ async function postProofs(ownerToken: string): Promise<number> {
     const nano = BigInt(asText(withdrawal["nano"]));
     const ton = (Number(nano) / 1e9).toFixed(9).replace(/\.?0+$/, "");
     const txHash = asText(withdrawal["tx_hash"]);
+    const publicNumber = asNumber(withdrawal["public_number"]);
+    const username = asText(withdrawal["user_username"]);
+    const firstName = asText(withdrawal["user_first_name"]) || "Miner";
+    const displayName = username ? "@" + username : firstName;
     const message = [
-      "✅ <b>Withdrawal sent</b>",
+      "✅ <b>Gram Miner Withdrawal #" + publicNumber + "</b>",
       "",
+      "👤 User: <b>" + escapeHtml(displayName) + "</b>",
       "💵 USD amount: <b>$" + (asNumber(withdrawal["amount_milli"]) / 1000).toFixed(3) + "</b>",
       "💎 TON amount: <b>" + ton + " TON</b>",
-      "🧾 Withdrawal: <code>" + escapeHtml(id) + "</code>",
-      "🔗 <a href=\"https://tonviewer.com/transaction/" + encodeURIComponent(txHash) + "\">View transaction</a>",
+      "🔗 <a href=\\\"https://tonviewer.com/transaction/" + encodeURIComponent(txHash) + "\\\">View transaction</a>",
       "",
       "⛏ Gram Miner — auto withdrawal",
-    ].join("\n");
+    ].join("\\n");
 
     try {
       const posted = await botApi<{
@@ -175,10 +186,10 @@ async function postProofs(ownerToken: string): Promise<number> {
         parse_mode: "HTML",
         disable_web_page_preview: true,
       });
-      const username = posted.chat.username ?? (chat.startsWith("@") ? chat.slice(1) : "");
+      const channelUsername = posted.chat.username ?? (chat.startsWith("@") ? chat.slice(1) : "");
       const chatId = String(posted.chat.id);
-      const proofMessageUrl = username
-        ? "https://t.me/" + username + "/" + posted.message_id
+      const proofMessageUrl = channelUsername
+        ? "https://t.me/" + channelUsername + "/" + posted.message_id
         : chatId.startsWith("-100")
           ? "https://t.me/c/" + chatId.slice(4) + "/" + posted.message_id
           : null;
