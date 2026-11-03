@@ -298,7 +298,17 @@ async function reconcileOpenBatches(
       continue;
     }
 
+    const age = Date.now() - Date.parse(sentAt);
+    if (!Number.isFinite(age) || age < 0) {
+      return { confirmed, review, expired, note: "invalid payout batch timestamp" };
+    }
+
     if (currentSeqno > asNumber(batch["seqno"])) {
+      // TON Center can briefly lag behind the wallet seqno. Do not mark a
+      // broadcast payout for manual review until its indexing grace period ends.
+      if (age <= WALLET_MESSAGE_GRACE_MS) {
+        return { confirmed, review, expired, note: "waiting for wallet transaction indexing" };
+      }
       await withWriteTransaction(async (tx) => {
         if (ids.length) {
           const slots = ids.map(() => "?").join(", ");
@@ -316,10 +326,6 @@ async function reconcileOpenBatches(
       continue;
     }
 
-    const age = Date.now() - Date.parse(sentAt);
-    if (!Number.isFinite(age) || age < 0) {
-      return { confirmed, review, expired, note: "invalid payout batch timestamp" };
-    }
     if (age > WALLET_MESSAGE_GRACE_MS && currentSeqno === asNumber(batch["seqno"])) {
       await withWriteTransaction(async (tx) => {
         if (ids.length) {
