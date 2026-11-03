@@ -396,7 +396,7 @@ export async function runPayouts(): Promise<{
   try {
     const manualReviewAtStart = await markLegacyBatchesForReview();
     assertLease();
-    const proofPosts = await postProofs(ownerToken);
+    let proofPosts = await postProofs(ownerToken);
     if (!process.env["TON_WALLET_MNEMONIC"]) {
       return { confirmed: 0, manualReview: manualReviewAtStart, expired: 0, proofPosts, note: "payout wallet not configured" };
     }
@@ -419,6 +419,9 @@ export async function runPayouts(): Promise<{
         note: reconciled.note,
       };
     }
+
+    // Publish newly confirmed withdrawals before preparing another transfer.
+    proofPosts += await postProofs(ownerToken);
 
     const active = await getDb().execute("SELECT COUNT(*) AS count FROM payout_batches WHERE status IN ('sending', 'broadcasting')");
     if (asNumber(asRow(active.rows[0])["count"]) > 0) {
