@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS withdrawals (
     CHECK (status IN ('pending', 'sending', 'sent', 'failed', 'manual_review')),
   batch_id TEXT,
   proof_posted INTEGER NOT NULL DEFAULT 0,
+  public_number INTEGER UNIQUE,
   proof_message_url TEXT,
   idempotency_key TEXT,
   tx_hash TEXT,
