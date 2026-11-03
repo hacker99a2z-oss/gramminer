@@ -61,7 +61,7 @@ function Withdraw() {
       pendingRequest.current = null;
       setAmount("");
       haptic("success");
-      toast.success("Withdrawal requested — it will be sent automatically");
+      toast.success("Withdrawal requested — automatic payout started");
     } catch (err) {
       haptic("error");
       toast.error(errMsg(err));
@@ -111,12 +111,6 @@ function Withdraw() {
         </button>
       </form>
 
-      {game.proofUrl && (
-        <a href={game.proofUrl} target="_blank" rel="noopener noreferrer" className="btn-ghost-gm mb-4 w-full text-sm">
-          Payments' proof <ExternalLink className="h-4 w-4" />
-        </a>
-      )}
-
       <SectionTitle kicker="Your payouts" title="History" />
       {!history.length ? (
         <p className="card-gm p-5 text-center text-sm text-muted-foreground">No withdrawals yet</p>
@@ -130,16 +124,6 @@ function Withdraw() {
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <span className={`rounded-full px-2 py-0.5 text-xs font-bold capitalize ${statusStyle[w.status] ?? "bg-secondary"}`}>{statusLabel[w.status] ?? w.status}</span>
-                {w.status === "sent" && w.transactionHash && (
-                  <a
-                    href={`https://tonviewer.com/transaction/${encodeURIComponent(w.transactionHash)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn-ghost-gm !px-3 !py-1 text-xs"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" /> TX
-                  </a>
-                )}
                 {w.status === "sent" && w.proofMessageUrl && (
                   <a
                     href={w.proofMessageUrl}
@@ -147,7 +131,7 @@ function Withdraw() {
                     rel="noopener noreferrer"
                     className="btn-ghost-gm !px-3 !py-1 text-xs"
                   >
-                    <ExternalLink className="h-3.5 w-3.5" /> Proof
+                    <ExternalLink className="h-3.5 w-3.5" /> View
                   </a>
                 )}
               </div>
